@@ -41,6 +41,7 @@ pub const Ty = enum(u6) {
     TRUE,
     VAR,
     WHILE,
+    EOF,
 };
 
 pub const TaggedLiteral = union(enum(u2)) {
