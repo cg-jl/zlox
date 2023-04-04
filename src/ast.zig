@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const Token = @import("Token.zig");
+pub const Builder = @import("ast/Builder.zig");
 
 pub const Expr = union(enum(u4)) {
     binary: Binary,
@@ -71,6 +72,18 @@ pub const Expr = union(enum(u4)) {
 
     pub fn literal(token: Token) Expr {
         return .{ .literal = token.extractLiteral() };
+    }
+
+    pub fn binary(
+        left: *const Expr,
+        op: Token,
+        right: *const Expr,
+    ) Expr {
+        return .{ .binary = Binary{
+            .left = left,
+            .operator = op,
+            .right = right,
+        } };
     }
 
     pub fn unary(operator: Token, right: *const Expr) Expr {
