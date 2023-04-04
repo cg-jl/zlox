@@ -43,6 +43,11 @@ pub const Ty = enum(u6) {
     WHILE,
 };
 
+pub const TaggedLiteral = union(enum(u2)) {
+    string: []const u8,
+    num: f64,
+};
+
 pub const Literal = union {
     string: []const u8,
     num: f64,
@@ -53,6 +58,14 @@ ty: Ty,
 lexeme: []const u8,
 literal: Literal,
 line: u32,
+
+pub fn extractLiteral(tok: Token) TaggedLiteral {
+    return switch (tok.ty) {
+        .NUMBER => .{ .num = tok.literal.num },
+        .STRING => .{ .string = tok.literal.string },
+        else => unreachable,
+    };
+}
 
 pub fn format(
     slf: Token,
