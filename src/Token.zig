@@ -44,9 +44,13 @@ pub const Ty = enum(u6) {
     EOF,
 };
 
+pub const Mask = std.enums.EnumSet(Ty);
+
 pub const TaggedLiteral = union(enum(u2)) {
     string: []const u8,
     num: f64,
+    boolean: bool,
+    nil: void,
 };
 
 pub const Literal = union {
@@ -64,6 +68,9 @@ pub fn extractLiteral(tok: Token) TaggedLiteral {
     return switch (tok.ty) {
         .NUMBER => .{ .num = tok.literal.num },
         .STRING => .{ .string = tok.literal.string },
+        .TRUE => .{ .boolean = true },
+        .FALSE => .{ .boolean = false },
+        .NIL => .{ .nil = {} },
         else => unreachable,
     };
 }
