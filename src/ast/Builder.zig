@@ -34,7 +34,7 @@ pub fn List(comptime T: type) type {
 
         const List = @This();
 
-        pub fn init(b: *Builder) List {
+        pub fn init(b: *const Builder) List {
             return .{ .inner = std.ArrayList(T).init(b.arena.allocator()) };
         }
 
