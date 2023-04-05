@@ -363,7 +363,7 @@ fn unary(p: *Parser) !ast.Expr {
 fn call(p: *Parser) !ast.Expr {
     var expr = try p.primary();
     while (true) {
-        switch (p.peek().ty) {
+        switch (p.advance().ty) {
             .LEFT_PAREN => {
                 var args = ast.Builder.List(ast.Expr).init(p.builder);
                 errdefer args.drop();
@@ -388,7 +388,10 @@ fn call(p: *Parser) !ast.Expr {
                 const name = try p.consume(.IDENTIFIER, "Expected property name after '.'");
                 expr = ast.Expr.get(try p.builder.expandLifetime(expr), name);
             },
-            else => break,
+            else => {
+                p.current -= 1;
+                break;
+            },
         }
     }
     return expr;
