@@ -57,6 +57,7 @@ fn printClass(p: *Printer, class: ast.Stmt.Class) void {
         p.indent_level += 1;
 
         for (class.methods) |m| {
+            p.makeIndent();
             p.printFunction(m);
         }
     }
@@ -83,6 +84,7 @@ fn printBlock(p: *Printer, body: []const ast.Stmt) void {
 
     p.indent_level += 1;
     for (body) |st| {
+        p.makeIndent();
         p.printStmt(st);
     }
 }
@@ -191,10 +193,13 @@ fn printFunction(p: *Printer, func: ast.Stmt.Function) void {
 }
 
 fn printSet(p: *Printer, set: ast.Expr.Set) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
-
     std.debug.print("Set{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
@@ -202,27 +207,24 @@ fn printSet(p: *Printer, set: ast.Expr.Set) void {
     p.makeIndent();
     std.debug.print("name: {s}\n", .{set.name.lexeme});
     p.makeIndent();
-    std.debug.print("value:\n", .{});
+    std.debug.print("value: ", .{});
     p.printExpr(set.value.*);
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 fn printGet(p: *Printer, get: ast.Expr.Get) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
-
     std.debug.print("Get{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
     p.printExpr(get.obj.*);
     p.makeIndent();
     std.debug.print("name: {s}\n", .{get.name.lexeme});
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 fn printSuper(_: *Printer, super: ast.Expr.Super) void {
@@ -234,9 +236,13 @@ fn printThis(_: *Printer, _: ast.Expr.Var) void {
 }
 
 fn printCall(p: *Printer, call: ast.Expr.Call) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
     std.debug.print("Call{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("callee: ", .{});
@@ -247,34 +253,33 @@ fn printCall(p: *Printer, call: ast.Expr.Call) void {
     } else {
         std.debug.print("arguments: [\n", .{});
         const pre_arg_ident = p.indent_level;
-        defer p.indent_level = pre_arg_ident;
+        defer {
+            p.indent_level = pre_arg_ident;
+            p.makeIndent();
+            std.debug.print("]\n", .{});
+        }
         p.indent_level += 1;
         for (call.arguments) |arg| {
             p.makeIndent();
             p.printExpr(arg);
         }
-        p.indent_level -= 1;
-        p.makeIndent();
-        std.debug.print("]\n", .{});
     }
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 fn printAssign(p: *Printer, assign: ast.Expr.Assign) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
     std.debug.print("Assign{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("name: {s}\n", .{assign.name.lexeme});
     p.makeIndent();
     std.debug.print("value: ", .{});
     p.printExpr(assign.value.*);
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 fn printLambda(p: *Printer, v: ast.Expr.Lambda) void {
@@ -287,18 +292,19 @@ fn printVar(_: *Printer, v: ast.Expr.Var) void {
 }
 
 fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
     std.debug.print("Unary{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("op: {}\n", .{u.operator});
     p.makeIndent();
     std.debug.print("right: ", .{});
     p.printExpr(u.right.*);
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
@@ -306,9 +312,13 @@ fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
 }
 
 fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
     std.debug.print("Binary{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("left: ", .{});
@@ -318,9 +328,6 @@ fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
     p.makeIndent();
     std.debug.print("right: ", .{});
     p.printExpr(b.right.*);
-    p.indent_level -= 1;
-    p.makeIndent();
-    std.debug.print("}}\n", .{});
 }
 
 pub fn printExpr(p: *Printer, e: ast.Expr) void {
@@ -339,9 +346,13 @@ fn makeIndent(p: *const Printer) void {
 }
 
 fn printFuncDecl(p: *Printer, decl: ast.FuncDecl) void {
-    const current_ident = p.indent_level;
-    defer p.indent_level = current_ident;
     std.debug.print("FuncDecl{{\n", .{});
+    const current_ident = p.indent_level;
+    defer {
+        p.indent_level = current_ident;
+        p.makeIndent();
+        std.debug.print("}}\n", .{});
+    }
     p.indent_level += 1;
     p.makeIndent();
     if (decl.name) |name| {
@@ -361,5 +372,4 @@ fn printFuncDecl(p: *Printer, decl: ast.FuncDecl) void {
     p.makeIndent();
     std.debug.print("body = ", .{});
     p.printBlock(decl.body);
-    std.debug.print("}}\n", .{});
 }
