@@ -113,7 +113,6 @@ fn printPrint(p: *Printer, pr: ast.Stmt.Print) void {
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
-    p.makeIndent();
     p.printExpr(pr);
 }
 
@@ -248,14 +247,17 @@ fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
 
     p.indent_level += 1;
     p.makeIndent();
-    std.debug.print("op: {}\n", .{u.operator});
+    std.debug.print("op: {s}\n", .{u.operator.lexeme});
     p.makeIndent();
     std.debug.print("right: ", .{});
     p.printExpr(u.right.*);
 }
 
 fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
-    std.debug.print("Literal({})\n", .{t});
+    switch (t) {
+        .string => |s| std.debug.print("Literal(\"{s}\")\n", .{s}),
+        else => std.debug.print("Literal({})\n", .{t}),
+    }
 }
 
 fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
@@ -268,7 +270,7 @@ fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
     std.debug.print("left: ", .{});
     p.printExpr(b.left.*);
     p.makeIndent();
-    std.debug.print("op: {}\n", .{b.operator});
+    std.debug.print("op: {s}\n", .{b.operator.lexeme});
     p.makeIndent();
     std.debug.print("right: ", .{});
     p.printExpr(b.right.*);
