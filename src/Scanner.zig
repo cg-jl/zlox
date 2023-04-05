@@ -56,6 +56,12 @@ pub fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
         scn.start = scn.current;
         try scn.scanToken(tokens);
     }
+    try tokens.append(Token{
+        .ty = .EOF,
+        .lexeme = "",
+        .literal = .{ .none = {} },
+        .line = scn.line,
+    });
 }
 
 fn isAtEnd(scn: *const Scanner) bool {
