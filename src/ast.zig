@@ -12,10 +12,12 @@ const std = @import("std");
 const Token = @import("Token.zig");
 pub const Builder = @import("ast/Builder.zig");
 
+
 pub const Expr = union(enum(u4)) {
     binary: Binary,
-    grouping: *const Expr,
-    literal: Token.TaggedLiteral,
+    grouping: *const Expr,  // this is not really needed, but I don't know where
+                            // the book wants to go with the AST.
+    literal: Literal,
     unary: Unary,
     @"var": Expr.Var,
     lambda: Lambda,
@@ -26,12 +28,14 @@ pub const Expr = union(enum(u4)) {
     get: Get,
     set: Set,
 
+    pub const Literal = Token.Literal;
+
     // count == 12 => u4
 
     pub fn VisitorVTable(comptime R: type, comptime Itor: type) R {
         return struct {
             visitBinary: fn (*Itor, Binary) R,
-            visitLiteral: fn (*Itor, Token.TaggedLiteral) R,
+            visitLiteral: fn (*Itor, Literal) R,
             visitUnary: fn (*Itor, Unary) R,
             visitVar: fn (*Itor, Token) R,
             visitLambda: fn (*Itor, Lambda) R,
@@ -70,6 +74,8 @@ pub const Expr = union(enum(u4)) {
         return .{ .@"var" = name };
     }
 
+    pub const nil = .{ .literal = .{ .nil = {} } };
+
     pub fn literal(token: Token) Expr {
         return .{ .literal = token.extractLiteral() };
     }
@@ -94,7 +100,7 @@ pub const Expr = union(enum(u4)) {
         return .{ .grouping = e };
     }
 
-    pub fn lambda(keyword: Token, decl: ast.FuncDecl) Expr {
+    pub fn lambda(keyword: Token, decl: FuncDecl) Expr {
         return .{ .lambda = Expr.Lambda{ .keyword = keyword, .decl = decl } };
     }
 
@@ -232,7 +238,7 @@ pub const Stmt = union(enum(u4)) {
     pub const Class = struct {
         name: Token,
         methods: []const Function,
-        superclass: Expr.Var,
+        superclass: ?Expr.Var,
     };
 
     pub const While = struct {
@@ -253,7 +259,7 @@ pub const Stmt = union(enum(u4)) {
     pub const If = struct {
         condition: Expr,
         then_branch: *const Stmt,
-        else_branch: *const Stmt,
+        else_branch: ?*const Stmt,
     };
 
     pub const Function = struct {
@@ -272,7 +278,7 @@ pub const Stmt = union(enum(u4)) {
     pub fn @"if"(
         condition: Expr,
         then_branch: *const Stmt,
-        else_branch: *const Stmt,
+        else_branch: ?*const Stmt,
     ) Stmt {
         return .{ .@"if" = If{
             .condition = condition,
@@ -304,7 +310,7 @@ pub const Stmt = union(enum(u4)) {
     pub fn class(
         name: Token,
         methods: []const Stmt.Function,
-        superclass: Expr.Var,
+        superclass: ?Expr.Var,
     ) Stmt {
         return .{ .class = .{
             .name = name,
@@ -314,7 +320,7 @@ pub const Stmt = union(enum(u4)) {
     }
 };
 pub const FuncDecl = struct {
-    name: Token,
+    name: ?Token,
     params: []const Token,
     body: []const Stmt,
 };
