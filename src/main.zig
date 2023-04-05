@@ -45,8 +45,13 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     if (Context.has_errored) return;
     var builder = ast.Builder.init(gpa);
     defer builder.deinit();
-    var parser = Parser.init(tokens.items, &builder, gpa);
+    // use an arena for all the strings, so we can free them
+    // all at once. Better allocator for this?
+    var str_alloc = std.heap.ArenaAllocator.init(gpa);
+    defer str_alloc.deinit();
+    var parser = Parser.init(tokens.items, &builder, str_alloc.allocator());
     var stmts = std.ArrayList(ast.Stmt).init(gpa);
+    defer stmts.deinit();
     try parser.parse(&stmts);
     if (!Context.has_errored)
         run(stmts.items);
