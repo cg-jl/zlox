@@ -14,12 +14,22 @@ const Builder = @This();
 
 arena: std.heap.ArenaAllocator,
 
-pub fn init(arena: std.heap.ArenaAllocator) Builder {
-    return .{ .arena = arena };
+pub fn init(gpa: std.mem.Allocator) Builder {
+    return .{ .arena = std.heap.ArenaAllocator.init(gpa) };
 }
 
 pub fn deinit(b: Builder) void {
     b.arena.deinit();
+}
+
+pub fn expandLifetimes(
+    builder: *Builder,
+    comptime T: type,
+    values: []const T,
+) Error![]const T {
+    const arr = try builder.arena.allocator().alloc(T, values.len);
+    std.mem.copy(T, arr, values);
+    return arr;
 }
 
 pub fn expandLifetime(builder: *Builder, value: anytype) Error!*const @TypeOf(value) {
