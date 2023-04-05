@@ -51,6 +51,20 @@ pub const TaggedLiteral = union(enum(u2)) {
     num: f64,
     boolean: bool,
     nil: void,
+
+    pub fn format(
+        slf: TaggedLiteral,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) @TypeOf(writer).Error!void {
+        switch (slf) {
+            .string => |s| try writer.print("{s}", .{s}),
+            .num => |n| try writer.print("{}", .{n}),
+            .boolean => |b| try writer.print("{}", .{b}),
+            .nil => try writer.print("nil", .{}),
+        }
+    }
 };
 
 pub const Literal = union {
