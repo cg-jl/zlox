@@ -2,6 +2,8 @@ const std = @import("std");
 const Context = @import("context.zig");
 const Scanner = @import("Scanner.zig");
 const Token = @import("Token.zig");
+const Parser = @import("Parser.zig");
+const ast = @import("ast.zig");
 
 pub fn main() !u8 {
     if (std.os.argv.len > 2) {
@@ -15,7 +17,6 @@ pub fn main() !u8 {
     try Scanner.initKeywords(gpa.allocator());
     defer Scanner.deinitKeywords(gpa.allocator());
 
-
     if (std.os.argv.len == 2) {
         try runFile(std.mem.span(std.os.argv[1]), gpa.allocator());
     } else {
@@ -24,9 +25,10 @@ pub fn main() !u8 {
     return 0;
 }
 
-fn run(toks: []const Token) void {
-    for (toks) |tk| {
-        std.log.debug("{}", .{tk});
+fn run(stmts: []const ast.Stmt) void {
+    var printer = ast.Printer{};
+    for (stmts) |s| {
+        printer.printStmt(s);
     }
 }
 
@@ -40,7 +42,14 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     var tokens = std.ArrayList(Token).init(gpa);
     defer tokens.deinit();
     try Scanner.scan(&tokens, mem);
-    run(tokens.items);
+    if (Context.has_errored) return;
+    var builder = ast.Builder.init(gpa);
+    defer builder.deinit();
+    var parser = Parser.init(tokens.items, &builder, gpa);
+    var stmts = std.ArrayList(ast.Stmt).init(gpa);
+    try parser.parse(&stmts);
+    if (!Context.has_errored)
+        run(stmts.items);
 }
 
 fn runPrompt(gpa: std.mem.Allocator) !void {
@@ -55,6 +64,12 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     defer tokens.deinit(gpa);
 
     _ = std.io.getStdOut().writer().write("> ") catch {};
+
+    var builder = ast.Builder.init(gpa);
+    var gp_arena = std.heap.ArenaAllocator.init(gpa);
+
+    defer builder.deinit();
+    defer gp_arena.deinit();
 
     while (true) {
         const line_end =
@@ -73,12 +88,42 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
         };
 
         variable_input.items.len += line_end.len;
+        defer {
+            variable_input.clearRetainingCapacity();
+            _ = std.io.getStdOut().writer().write("> ") catch {};
+        }
+        Context.clear();
         tokens.clearRetainingCapacity();
-        var toks_managed = tokens.toManaged(gpa);
-        defer tokens = toks_managed.moveToUnmanaged();
-        try Scanner.scan(&toks_managed, variable_input.items);
-        variable_input.clearRetainingCapacity();
-        run(toks_managed.items);
-        _ = std.io.getStdOut().writer().write("> ") catch {};
+        {
+            var toks_managed = tokens.toManaged(gpa);
+            defer tokens = toks_managed.moveToUnmanaged();
+            try Scanner.scan(&toks_managed, variable_input.items);
+        }
+        if (Context.has_errored) continue;
+
+        defer _ = builder.arena.reset(.retain_capacity);
+        defer _ = gp_arena.reset(.retain_capacity);
+        var parser = Parser.init(tokens.items, &builder, gp_arena.allocator());
+        if (hasStatementShit(tokens.items)) {
+            var stmts = std.ArrayList(ast.Stmt).init(gp_arena.allocator());
+            try parser.parse(&stmts);
+            if (!Context.has_errored) run(stmts.items);
+        } else {
+            const expr = try parser.tryExpression();
+            if (expr) |e| {
+                var printer = ast.Printer{};
+                printer.printExpr(e);
+            }
+        }
     }
+}
+
+fn hasStatementShit(tokens: []const Token) bool {
+    const stmt_tokens = comptime &.{ .IF, .WHILE, .FOR, .ELSE, .CLASS, .VAR, .FUN, .RETURN };
+    const mask = comptime Token.Mask.initMany(stmt_tokens);
+
+    for (tokens) |tk| {
+        if (mask.contains(tk.ty)) return true;
+    }
+    return false;
 }
