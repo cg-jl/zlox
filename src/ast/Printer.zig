@@ -32,13 +32,9 @@ const stmt_vt = ast.Stmt.VisitorVTable(void, Printer){
 };
 
 fn printClass(p: *Printer, class: ast.Stmt.Class) void {
-    std.debug.print("Class{{\n", .{});
+    std.debug.print("Class:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
@@ -47,13 +43,10 @@ fn printClass(p: *Printer, class: ast.Stmt.Class) void {
     if (class.methods.len == 0) {
         std.debug.print("(no methods)\n", .{});
     } else {
-        std.debug.print("methods = [\n", .{});
+        std.debug.print("methods:\n", .{});
         const pre_methods_level = p.indent_level;
-        defer {
-            p.indent_level = pre_methods_level;
-            p.makeIndent();
-            std.debug.print("]\n", .{});
-        }
+        defer p.indent_level = pre_methods_level;
+
         p.indent_level += 1;
 
         for (class.methods) |m| {
@@ -74,13 +67,9 @@ fn printBlock(p: *Printer, body: []const ast.Stmt) void {
         return;
     }
 
-    std.debug.print("Block{{\n", .{});
+    std.debug.print("Block:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     for (body) |st| {
@@ -90,13 +79,9 @@ fn printBlock(p: *Printer, body: []const ast.Stmt) void {
 }
 
 fn printWhile(p: *Printer, wh: ast.Stmt.While) void {
-    std.debug.print("While{{\n", .{});
+    std.debug.print("While:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
@@ -108,13 +93,9 @@ fn printWhile(p: *Printer, wh: ast.Stmt.While) void {
 }
 
 fn printVarSt(p: *Printer, v: ast.Stmt.Var) void {
-    std.debug.print("VarDecl{{\n", .{});
+    std.debug.print("VarDecl:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
@@ -127,39 +108,29 @@ fn printVarSt(p: *Printer, v: ast.Stmt.Var) void {
 }
 
 fn printPrint(p: *Printer, pr: ast.Stmt.Print) void {
-    std.debug.print("Print(\n", .{});
+    std.debug.print("Print: ", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print(")\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     p.printExpr(pr);
 }
 
 fn printReturn(p: *Printer, ret: ast.Stmt.Return) void {
-    std.debug.print("Return(\n", .{});
+    std.debug.print("Return:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print(")\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     p.printExpr(ret.value);
 }
 
 fn printIf(p: *Printer, iff: ast.Stmt.If) void {
-    std.debug.print("If{{\n", .{});
+    std.debug.print("If:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
@@ -176,13 +147,9 @@ fn printIf(p: *Printer, iff: ast.Stmt.If) void {
 }
 
 fn printFunction(p: *Printer, func: ast.Stmt.Function) void {
-    std.debug.print("Function{{\n", .{});
+    std.debug.print("Function:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
@@ -193,13 +160,10 @@ fn printFunction(p: *Printer, func: ast.Stmt.Function) void {
 }
 
 fn printSet(p: *Printer, set: ast.Expr.Set) void {
-    std.debug.print("Set{{\n", .{});
+    std.debug.print("Set:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
@@ -212,13 +176,10 @@ fn printSet(p: *Printer, set: ast.Expr.Set) void {
 }
 
 fn printGet(p: *Printer, get: ast.Expr.Get) void {
-    std.debug.print("Get{{\n", .{});
+    std.debug.print("Get:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
@@ -236,28 +197,20 @@ fn printThis(_: *Printer, _: ast.Expr.Var) void {
 }
 
 fn printCall(p: *Printer, call: ast.Expr.Call) void {
-    std.debug.print("Call{{\n", .{});
+    std.debug.print("Call:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("callee: ", .{});
     p.printExpr(call.callee.*);
-    p.makeIndent();
-    if (call.arguments.len == 0) {
-        std.debug.print("arguments: []\n", .{});
-    } else {
-        std.debug.print("arguments: [\n", .{});
+    if (call.arguments.len != 0) {
+        p.makeIndent();
+        std.debug.print("arguments:\n", .{});
         const pre_arg_ident = p.indent_level;
-        defer {
-            p.indent_level = pre_arg_ident;
-            p.makeIndent();
-            std.debug.print("]\n", .{});
-        }
+        defer p.indent_level = pre_arg_ident;
+
         p.indent_level += 1;
         for (call.arguments) |arg| {
             p.makeIndent();
@@ -267,13 +220,10 @@ fn printCall(p: *Printer, call: ast.Expr.Call) void {
 }
 
 fn printAssign(p: *Printer, assign: ast.Expr.Assign) void {
-    std.debug.print("Assign{{\n", .{});
+    std.debug.print("Assign:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("name: {s}\n", .{assign.name.lexeme});
@@ -292,13 +242,10 @@ fn printVar(_: *Printer, v: ast.Expr.Var) void {
 }
 
 fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
-    std.debug.print("Unary{{\n", .{});
+    std.debug.print("Unary:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("op: {}\n", .{u.operator});
@@ -312,13 +259,10 @@ fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
 }
 
 fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
-    std.debug.print("Binary{{\n", .{});
+    std.debug.print("Binary:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
+
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("left: ", .{});
@@ -346,13 +290,9 @@ fn makeIndent(p: *const Printer) void {
 }
 
 fn printFuncDecl(p: *Printer, decl: ast.FuncDecl) void {
-    std.debug.print("FuncDecl{{\n", .{});
+    std.debug.print("FuncDecl:\n", .{});
     const current_ident = p.indent_level;
-    defer {
-        p.indent_level = current_ident;
-        p.makeIndent();
-        std.debug.print("}}\n", .{});
-    }
+    defer p.indent_level = current_ident;
     p.indent_level += 1;
     p.makeIndent();
     if (decl.name) |name| {
