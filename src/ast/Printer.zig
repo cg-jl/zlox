@@ -288,7 +288,7 @@ fn printLambda(p: *Printer, v: ast.Expr.Lambda) void {
 }
 
 fn printVar(_: *Printer, v: ast.Expr.Var) void {
-    std.debug.print("Var: {s}\n", .{v.lexeme});
+    std.debug.print("Var({s})\n", .{v.lexeme});
 }
 
 fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
@@ -308,7 +308,7 @@ fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
 }
 
 fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
-    std.debug.print("Literal: {}\n", .{t});
+    std.debug.print("Literal({})\n", .{t});
 }
 
 fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
