@@ -11,12 +11,12 @@
 const std = @import("std");
 const Token = @import("Token.zig");
 pub const Builder = @import("ast/Builder.zig");
-
+pub const Printer = @import("ast/Printer.zig");
 
 pub const Expr = union(enum(u4)) {
     binary: Binary,
-    grouping: *const Expr,  // this is not really needed, but I don't know where
-                            // the book wants to go with the AST.
+    grouping: *const Expr, // this is not really needed, but I don't know where
+    // the book wants to go with the AST.
     literal: Literal,
     unary: Unary,
     @"var": Expr.Var,
@@ -28,11 +28,11 @@ pub const Expr = union(enum(u4)) {
     get: Get,
     set: Set,
 
-    pub const Literal = Token.Literal;
+    pub const Literal = Token.TaggedLiteral;
 
     // count == 12 => u4
 
-    pub fn VisitorVTable(comptime R: type, comptime Itor: type) R {
+    pub fn VisitorVTable(comptime R: type, comptime Itor: type) type {
         return struct {
             visitBinary: fn (*Itor, Binary) R,
             visitLiteral: fn (*Itor, Literal) R,
@@ -49,6 +49,7 @@ pub const Expr = union(enum(u4)) {
     }
 
     pub fn accept(
+        self: Expr,
         comptime R: type,
         comptime Itor: type,
         comptime vt: VisitorVTable(R, Itor),
@@ -56,7 +57,7 @@ pub const Expr = union(enum(u4)) {
     ) R {
         return switch (self) {
             .binary => |bin| vt.visitBinary(v, bin),
-            .grouping => |grouping| grouping.accept(R, Itor, vt, v),
+            .grouping => |g| g.accept(R, Itor, vt, v),
             .literal => |l| vt.visitLiteral(v, l),
             .unary => |u| vt.visitUnary(v, u),
             .@"var" => |t| vt.visitVar(v, t),
@@ -215,10 +216,10 @@ pub const Stmt = union(enum(u4)) {
     }
 
     pub fn accept(
+        self: Stmt,
         comptime R: type,
         comptime I: type,
         comptime vt: VisitorVTable(R, I),
-        self: Stmt,
         v: *I,
     ) R {
         return switch (self) {
@@ -256,6 +257,8 @@ pub const Stmt = union(enum(u4)) {
         value: Expr,
     };
 
+    pub const Print = Expr;
+
     pub const If = struct {
         condition: Expr,
         then_branch: *const Stmt,
@@ -291,15 +294,15 @@ pub const Stmt = union(enum(u4)) {
         return .{ .@"return" = Return{ .keyword = keyword, .value = value } };
     }
 
-    pub fn print(expr: Expr) Stmt {
-        return .{ .print = expr };
+    pub fn print(e: Expr) Stmt {
+        return .{ .print = e };
     }
 
     pub fn @"var"(name: Token, init: ?Expr) Stmt {
         return .{ .@"var" = Var{ .name = name, .init = init } };
     }
 
-    pub fn @"while"(condition: Stmt, body: *const Stmt) Stmt {
+    pub fn @"while"(condition: Expr, body: *const Stmt) Stmt {
         return .{ .@"while" = While{ .condition = condition, .body = body } };
     }
 
@@ -320,7 +323,7 @@ pub const Stmt = union(enum(u4)) {
     }
 };
 pub const FuncDecl = struct {
-    name: ?Token,
+    name: ?Token, // NOTE: this is not needed, since it's included in Function.
     params: []const Token,
     body: []const Stmt,
 };

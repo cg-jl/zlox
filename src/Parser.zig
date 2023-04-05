@@ -10,16 +10,16 @@ const StrAlloc = std.mem.Allocator;
 const AllocOrSignal = Error || StrAlloc.Error;
 const AllocErr = std.mem.Allocator.Error;
 
-const LStmt = std.ArrayList(Stmt);
+const LStmt = std.ArrayList(ast.Stmt);
 
-builder: ast.Builder,
+builder: *ast.Builder,
 sa: StrAlloc,
 tokens: []const Token,
 current: usize = 0,
 
 pub fn init(
     tokens: []const Token,
-    builder: ast.Builder,
+    builder: *ast.Builder,
     str_alloc: StrAlloc,
 ) Parser {
     return .{
@@ -40,7 +40,6 @@ pub fn parse(self: *Parser, statements: *LStmt) AllocErr!void {
             try statements.append(decl);
         }
     }
-    return statements;
 }
 
 pub fn tryDeclaration(p: *Parser) AllocErr!?ast.Stmt {
@@ -49,24 +48,25 @@ pub fn tryDeclaration(p: *Parser) AllocErr!?ast.Stmt {
             p.synchronize();
             return null;
         }
-        return errSetCast(AllocErr, err);
+        return @errSetCast(AllocErr, err);
     };
 }
 
-fn declaration(p: *Parser) !ast.Stmt {
-    switch (p.peek().ty) {
-        .CLASS => {
-            p.current += 1;
-            return try p.classDecl();
-        },
+fn declaration(p: *Parser) AllocOrSignal!ast.Stmt {
+    switch (p.advance().ty) {
+        .CLASS => return try p.classDecl(),
         .FUN => {
-            p.current += 1;
             if (p.check(.LEFT_PAREN)) {
-                p.current -= 1;
+                p.current -= 2;
                 return try p.exprStmt(); // will re-match on 'fun'
             } else {
-                return try p.function("function");
+                return ast.Stmt{ .function = try p.function("function") };
             }
+        },
+        .VAR => return try p.varDecl(),
+        else => {
+            p.current -= 1;
+            return try p.statement();
         },
     }
 }
@@ -80,7 +80,7 @@ fn classDecl(p: *Parser) !ast.Stmt {
     }
 
     _ = try p.consume(.LEFT_BRACE, "Expected '{' before class body");
-    var methods = ast.Builder.List(ast.Stmt.Function).init(&p.builder);
+    var methods = ast.Builder.List(ast.Stmt.Function).init(p.builder);
     errdefer methods.drop();
 
     while (!p.check(.RIGHT_BRACE) and !p.isAtEnd()) {
@@ -93,26 +93,37 @@ fn classDecl(p: *Parser) !ast.Stmt {
 
 fn function(p: *Parser, comptime kind: []const u8) !ast.Stmt.Function {
     const name = try p.consume(.IDENTIFIER, "Expected " ++ kind ++ " name");
-    return ast.Stmt.function(name, try p.funcDecl(p, kind, name));
+    return ast.Stmt.Function{ .name = name, .decl = try p.funcDecl(kind, name) };
 }
 
-fn statement(p: *Parser) !ast.Stmt {
-    return unreachable;
+fn statement(p: *Parser) AllocOrSignal!ast.Stmt {
+    return switch (p.advance().ty) {
+        .FOR => try p.forStmt(),
+        .PRINT => try p.printStmt(),
+        .RETURN => try p.returnStmt(p.prev()),
+        .LEFT_BRACE => ast.Stmt.block(try p.block()),
+        .IF => try p.ifStmt(),
+        .WHILE => try p.whileStmt(),
+        else => {
+            p.current -= 1;
+            return try p.exprStmt();
+        },
+    };
 }
 
 fn lambda(p: *Parser, kw: Token) !ast.Expr {
     return ast.Expr.lambda(kw, try p.funcDecl("lambda", null));
 }
 
-fn funcDecl(p: *Parser, comptime kind: []const u8, name: ?Token) !ast.Funcdecl {
+fn funcDecl(p: *Parser, comptime kind: []const u8, name: ?Token) !ast.FuncDecl {
     _ = try p.consume(.LEFT_PAREN, "Expected '(' after " ++ kind ++ " name");
-    var params = ast.Builder.List(Token).init(&p.builder);
+    var params = ast.Builder.List(Token).init(p.builder);
     errdefer params.drop();
     if (!p.check(.RIGHT_PAREN)) {
         try params.push(try p.consume(.IDENTIFIER, "Expected parameter name"));
         while (p.match(.COMMA)) |_| {
             if (params.inner.items.len >= 255) {
-                p.report(p.peek(), "Can't have more than 255 parameters");
+                try p.report(p.peek(), "Can't have more than 255 parameters");
             }
             try params.push(try p.consume(.IDENTIFIER, "Expected parameter name"));
         }
@@ -121,7 +132,7 @@ fn funcDecl(p: *Parser, comptime kind: []const u8, name: ?Token) !ast.Funcdecl {
     _ = try p.consume(.RIGHT_PAREN, "Expected ')' after parameters");
     // Function body
     _ = try p.consume(.LEFT_BRACE, "Expected '{' before " ++ kind ++ " body");
-    const body = p.block();
+    const body = try p.block();
     return ast.FuncDecl{
         .name = name,
         .params = params.release(),
@@ -132,21 +143,53 @@ fn funcDecl(p: *Parser, comptime kind: []const u8, name: ?Token) !ast.Funcdecl {
 fn forStmt(p: *Parser) !ast.Stmt {
     _ = try p.consume(.LEFT_PAREN, "Expected '(' after 'for'");
 
-    var init: ?*const Stmt = switch (p.peek().ty) {
+    const init_stmt = switch (p.peek().ty) {
         .SEMICOLON => b: {
-            p.advance();
+            p.current += 1;
             break :b null;
         },
-        .VAR => try p.builder.expandLifetime(try p.varDecl()),
-        else => try p.builder.expandLifetime(try p.exprStmt()),
+        .VAR => b2: {
+            p.current += 1;
+            break :b2 try p.varDecl();
+        },
+        else => try p.exprStmt(),
     };
+
+    const cond = switch (p.peek().ty) {
+        .SEMICOLON => ast.Expr{ .literal = .{ .boolean = true } },
+        else => try p.expression(),
+    };
+
+    _ = try p.consume(.SEMICOLON, "Expected ';' after loop condition");
+
+    const incr = if (!p.check(.RIGHT_PAREN)) try p.expression() else null;
+
+    _ = try p.consume(.RIGHT_PAREN, "Expected ')' after for clauses");
+
+    var body = try p.statement();
+
+    // Desugar
+    if (incr) |i| {
+        body = ast.Stmt.block(try p.builder.expandLifetimes(ast.Stmt, &.{
+            body,
+            ast.Stmt.expr(i),
+        }));
+    }
+
+    body = ast.Stmt.@"while"(cond, try p.builder.expandLifetime(body));
+
+    if (init_stmt) |st| {
+        body = ast.Stmt.block(try p.builder.expandLifetimes(ast.Stmt, &.{ st, body }));
+    }
+
+    return body;
 }
 
 fn varDecl(p: *Parser) !ast.Stmt {
     const name = try p.consume(.IDENTIFIER, "Expected variable name");
-    const init = if (p.match(.EQUAL)) |_| try p.expression() else null;
+    const init_expr = if (p.match(.EQUAL)) |_| try p.expression() else null;
     _ = try p.consume(.SEMICOLON, "Expected ';' after variable declaration");
-    return ast.Stmt.@"var"(name, init);
+    return ast.Stmt.@"var"(name, init_expr);
 }
 
 fn returnStmt(p: *Parser, keyword: Token) !ast.Stmt {
@@ -177,7 +220,7 @@ fn ifStmt(p: *Parser) !ast.Stmt {
 
     const then_branch = try p.statement();
     const else_branch = elseBranch: {
-        if (p.match(.ELSE)) {
+        if (p.match(.ELSE)) |_| {
             const stmt = try p.statement();
             break :elseBranch try p.builder.expandLifetime(stmt);
         } else {
@@ -193,7 +236,7 @@ fn ifStmt(p: *Parser) !ast.Stmt {
 }
 
 fn block(p: *Parser) ![]const ast.Stmt {
-    var statements = ast.Builder.List(ast.Stmt).init(&p.builder);
+    var statements = ast.Builder.List(ast.Stmt).init(p.builder);
     errdefer statements.drop();
 
     while (!p.check(.RIGHT_BRACE) and !p.isAtEnd()) {
@@ -227,53 +270,53 @@ inline fn expression(p: *Parser) !ast.Expr {
     return try p.assignment();
 }
 
-fn assignment(p: *Parser) !ast.Expr {
-    const expr = p.logicOr();
+fn assignment(p: *Parser) AllocOrSignal!ast.Expr {
+    const expr = try p.logicOr();
     if (p.match(.EQUAL)) |equals| {
         const value = try p.logicOr();
         const valuep = try p.builder.expandLifetime(value);
 
         switch (expr) {
             .@"var" => |name| return ast.Expr.assign(name, valuep),
-            .get => |g| return ast.Expr.set(g.obj, g.name, valuep),
-            else => return try p.report(equals, "Invalid assignment target"),
+            .get => |g| return ast.Expr.set(g.obj, valuep, g.name),
+            else => try p.report(equals, "Invalid assignment target"),
         }
     }
     return expr;
 }
 
 fn logicOr(p: *Parser) !ast.Expr {
-    var expr = p.logicAnd();
+    var expr = try p.logicAnd();
     while (p.match(.AND)) |op| {
-        const right = p.logicAnd();
-        expr = try p.binary(expr, op, right);
+        const right = try p.logicAnd();
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
 
 fn logicAnd(p: *Parser) !ast.Expr {
-    var expr = p.equality();
+    var expr = try p.equality();
     while (p.match(.AND)) |op| {
-        const right = p.equality();
-        expr = try p.binary(expr, op, right);
+        const right = try p.equality();
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
 
 fn equality(p: *Parser) !ast.Expr {
-    var expr = p.comparison();
+    var expr = try p.comparison();
     while (p.matchMulti(&.{ .BANG_EQUAL, .EQUAL_EQUAL })) |op| {
-        const right = p.comparison();
-        expr = try p.binary(expr, op, right);
+        const right = try p.comparison();
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
 
 fn comparison(p: *Parser) !ast.Expr {
-    var expr = p.term();
+    var expr = try p.term();
     while (p.matchMulti(&.{ .GREATER, .GREATER_EQUAL, .LESS, .LESS_EQUAL })) |op| {
         const right = try p.term();
-        expr = try p.binary(expr, op, right);
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
@@ -282,7 +325,7 @@ fn term(p: *Parser) !ast.Expr {
     var expr = try p.factor();
     while (p.matchMulti(&.{ .MINUS, .PLUS })) |op| {
         const right = try p.factor();
-        expr = try p.binary(expr, op, right);
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
@@ -291,17 +334,17 @@ fn factor(p: *Parser) !ast.Expr {
     var expr = try p.unary();
     while (p.matchMulti(&.{ .SLASH, .STAR })) |op| {
         const right = try p.unary();
-        expr = try p.binary(expr, op, right);
+        expr = try binary(p.builder, expr, op, right);
     }
     return expr;
 }
 
 fn binary(
-    b: *Builder,
-    left: Expr,
+    b: *ast.Builder,
+    left: ast.Expr,
     op: Token,
-    right: Expr,
-) Builder.Error!Expr {
+    right: ast.Expr,
+) ast.Builder.Error!ast.Expr {
     const lr = try b.arena.allocator().alloc(ast.Expr, 2);
     lr[0] = left;
     lr[1] = right;
@@ -311,7 +354,7 @@ fn binary(
 fn unary(p: *Parser) !ast.Expr {
     if (p.matchMulti(&.{ .BANG, .MINUS })) |operator| {
         const right = try p.unary();
-        return ast.Expr.Unary(operator, try p.builder.expandLifetime(right));
+        return ast.Expr.unary(operator, try p.builder.expandLifetime(right));
     }
 
     return try p.call();
@@ -322,15 +365,15 @@ fn call(p: *Parser) !ast.Expr {
     while (true) {
         switch (p.peek().ty) {
             .LEFT_PAREN => {
-                var args = ast.Builder.List(ast.Expr).init(&p.builder);
+                var args = ast.Builder.List(ast.Expr).init(p.builder);
                 errdefer args.drop();
                 if (!p.check(.RIGHT_PAREN)) {
                     try args.push(try p.expression());
-                    while (p.match(.COMMA)) {
+                    while (p.match(.COMMA)) |_| {
                         if (args.inner.items.len >= 255) {
-                            return try p.report(p.peek(), "Can't have more than 255 arguments");
-                            try args.push(try p.expression());
+                            try p.report(p.peek(), "Can't have more than 255 arguments");
                         }
+                        try args.push(try p.expression());
                     }
                 }
 
@@ -368,8 +411,9 @@ fn primary(p: *Parser) AllocOrSignal!ast.Expr {
             _ = try p.consume(.RIGHT_PAREN, "Expected ')' after expression");
             return ast.Expr.grouping(try p.builder.expandLifetime(inner));
         },
-        else => return try p.report(p.prev(), "Expected expression"),
+        else => try p.report(p.prev(), "Expected expression"),
     }
+    unreachable;
 }
 
 fn synchronize(p: *Parser) void {
@@ -392,7 +436,7 @@ fn consume(
     comptime ty: Token.Ty,
     comptime message: []const u8,
 ) !Token {
-    if (!p.match(ty)) return try p.report(p.peek(), message);
+    if (p.peek().ty != ty) try p.report(p.peek(), message);
     return p.advance();
 }
 
@@ -400,10 +444,14 @@ fn report(
     p: *const Parser,
     token: Token,
     comptime message: []const u8,
-) !Error {
+) !void {
     ctx.report(
         token.line,
-        if (token.ty == .EOF) " at end" else try std.fmt.allocPrint(p.sa, " at '{s}'", .{token.literal}),
+        if (token.ty == .EOF) " at end" else try std.fmt.allocPrint(
+            p.sa,
+            " at '{s}'",
+            .{token.lexeme},
+        ),
         message,
     );
     return error.ParseError;
@@ -411,14 +459,14 @@ fn report(
 
 fn matchMulti(p: *Parser, comptime types: []const Token.Ty) ?Token {
     const mask = comptime Token.Mask.initMany(types);
-    if (p.isAtEnd()) return false;
+    if (p.isAtEnd()) return null;
 
     const current = p.peek().ty;
 
     return if (mask.contains(current)) p.advance() else null;
 }
 
-fn match(p: *Parser, comptime ty: Token.Ty) ?Toekn {
+fn match(p: *Parser, comptime ty: Token.Ty) ?Token {
     if (!p.check(ty)) return null;
     return p.advance();
 }

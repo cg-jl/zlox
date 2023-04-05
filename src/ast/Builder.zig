@@ -8,7 +8,7 @@ const Token = @import("../Token.zig");
 
 const Expr = ast.Expr;
 const Stmt = ast.Stmt;
-const Error = std.mem.Allocator.Error;
+pub const Error = std.mem.Allocator.Error;
 
 const Builder = @This();
 
@@ -42,24 +42,25 @@ pub fn List(comptime T: type) type {
     return struct {
         inner: std.ArrayList(T),
 
-        const List = @This();
+        const L = @This();
 
-        pub fn init(b: *const Builder) List {
+        pub fn init(b: *Builder) L {
             return .{ .inner = std.ArrayList(T).init(b.arena.allocator()) };
         }
 
-        pub fn push(self: *List, v: T) Error!void {
+        pub fn push(self: *L, v: T) Error!void {
             try self.inner.append(v);
         }
 
-        pub fn drop(self: List) void {
+        pub fn drop(self: L) void {
             self.inner.deinit();
         }
 
         /// Releases the array, leaking the pointer.
-        pub fn release(self: List) []const T {
-            self.inner.shrinkAndFree(self.inner.items.len);
-            return self.inner.items;
+        pub fn release(self: L) []const T {
+            var s = self;
+            s.inner.shrinkAndFree(self.inner.items.len);
+            return s.inner.items;
         }
     };
 }
