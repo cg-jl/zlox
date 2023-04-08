@@ -323,7 +323,7 @@ pub const Stmt = union(enum(u4)) {
     }
 };
 pub const FuncDecl = struct {
-    name: ?Token, // NOTE: this is not needed, since it's included in Function.
+    name: ?Token,
     params: []const Token,
     body: []const Stmt,
 };
