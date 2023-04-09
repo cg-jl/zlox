@@ -42,6 +42,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
     errdefer arena_gpa.deinit();
 
     const globals: *Env = try env_pool.create();
+    globals.* = .{ .enclosing = null };
     try globals.define(
         arena_gpa.allocator(),
         "clock",
@@ -389,6 +390,7 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
     const vt: data.CallableVT = switch (callee) {
         .func => |*f| f.getVT(),
         .class => |*c| data.Class.getVT(c),
+        .callable => |t| t,
         else => {
             state.ctx.report(call.paren, "Can only call functions and classes");
             return error.RuntimeError;
