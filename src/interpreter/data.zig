@@ -97,7 +97,7 @@ pub const Function = struct {
         defer st.env_pool.destroy(env);
         env.* = Env{ .enclosing = func.closure };
         for (func.decl.params, 0..) |param, i| {
-            try env.define(st.gpa.allocator(), param.lexeme, args[i]);
+            try env.define(st.arena.allocator(), param.lexeme, args[i]);
         }
 
         const ret_val: Value = catchReturn: {

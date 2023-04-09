@@ -31,7 +31,7 @@ env_pool: std.heap.MemoryPool(Env),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
-gpa: std.heap.ArenaAllocator,
+arena: std.heap.ArenaAllocator,
 timer: std.time.Timer,
 ret_val: ?data.Value = null,
 
@@ -60,7 +60,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
         .locals = .{},
         .env_pool = env_pool,
         .instance_pool = std.heap.MemoryPool(data.Instance).init(gpa),
-        .gpa = arena_gpa,
+        .arena = arena_gpa,
         // let's pretend this cannot error for now. Misusing a toy language interpreter
         // in a seccomp environment is hard to do.
         .timer = std.time.Timer.start() catch unreachable,
@@ -70,7 +70,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
 pub fn deinit(state: *State) void {
     state.env_pool.deinit();
     state.instance_pool.deinit();
-    state.gpa.deinit();
+    state.arena.deinit();
     state.ctx.deinit();
 }
 
@@ -113,7 +113,7 @@ pub fn tryExecStmt(state: *State, stmt: ast.Stmt) AllocErr!void {
 }
 
 pub inline fn resolve(state: *State, line: usize, depth: usize) !void {
-    try state.locals.put(state.gpa.allocator(), line, depth);
+    try state.locals.put(state.arena.allocator(), line, depth);
 }
 
 pub fn stringify(state: *State, obj: data.Value) ![]const u8 {
@@ -153,7 +153,7 @@ const stmt_vt = ast.Stmt.VisitorVTable(VoidResult, State){
 
 fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     try state.current_env.define(
-        state.gpa.allocator(),
+        state.arena.allocator(),
         stmt.name.lexeme,
         .{ .nil = {} },
     );
@@ -173,7 +173,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         class_env = try state.env_pool.create();
         class_env.* = .{ .enclosing = state.current_env };
         // It's ok to make a copy of the class info since they're immutable.
-        try class_env.define(state.gpa.allocator(), "super", .{ .class = superc.* });
+        try class_env.define(state.arena.allocator(), "super", .{ .class = superc.* });
         superclass = superc;
     }
 
@@ -187,7 +187,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
             .is_init = std.mem.eql(u8, m.name.lexeme, "init"),
         };
         if (method.is_init) init_method = method;
-        try methods.put(state.gpa.allocator(), m.name.lexeme, method);
+        try methods.put(state.arena.allocator(), m.name.lexeme, method);
     }
 
     const class = data.Class{
@@ -211,7 +211,7 @@ fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
     env.* = .{ .enclosing = state.current_env };
     defer {
         // but we also want to deinitialize all of them without leaving danglings...
-        env.values.deinit(state.gpa.allocator());
+        env.values.deinit(state.arena.allocator());
         state.env_pool.destroy(env);
     }
 
@@ -243,7 +243,7 @@ fn visitVarStmt(state: *State, v: ast.Stmt.Var) VoidResult {
     if (v.init) |i| {
         value = try state.visitExpr(i);
     }
-    try state.current_env.define(state.gpa.allocator(), v.name.lexeme, value);
+    try state.current_env.define(state.arena.allocator(), v.name.lexeme, value);
 }
 
 fn visitPrint(state: *State, p: ast.Stmt.Print) VoidResult {
@@ -270,7 +270,7 @@ fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
         .is_init = false,
     };
     try state.current_env.define(
-        state.gpa.allocator(),
+        state.arena.allocator(),
         e.name.lexeme,
         .{ .func = function },
     );
@@ -312,7 +312,7 @@ fn instancePut(
     name: Token,
     value: data.Value,
 ) AllocErr!void {
-    try instance.fields.put(state.gpa.allocator(), name.lexeme, value);
+    try instance.fields.put(state.arena.allocator(), name.lexeme, value);
 }
 
 fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
@@ -371,7 +371,7 @@ pub fn bind(
     errdefer state.env_pool.destroy(env);
 
     // this sucks, because now I have to make instances pointers. Not cool!
-    try env.define(state.gpa.allocator(), "this", .{ .instance = instancep });
+    try env.define(state.arena.allocator(), "this", .{ .instance = instancep });
 
     return data.Function{
         .decl = f.decl,
@@ -405,7 +405,7 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
     }
 
     // use underlying GPA to be able to free the list, without messing with the arena.
-    var arguments = std.ArrayList(data.Value).init(state.gpa.allocator());
+    var arguments = std.ArrayList(data.Value).init(state.arena.allocator());
     defer arguments.deinit(); // they're getting copied anyway.
 
     for (call.arguments) |c| {
@@ -421,7 +421,7 @@ fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
     const distance = state.locals.get(local(assign.name));
     if (distance) |d| {
         try state.current_env.assignAt(
-            state.gpa.allocator(),
+            state.arena.allocator(),
             d,
             assign.name.lexeme,
             value,
