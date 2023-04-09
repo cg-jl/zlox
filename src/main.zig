@@ -26,13 +26,6 @@ pub fn main() !u8 {
     return 0;
 }
 
-fn run(stmts: []const ast.Stmt) void {
-    var printer = ast.Printer{};
-    for (stmts) |s| {
-        printer.printStmt(s);
-    }
-}
-
 fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     const file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
@@ -58,7 +51,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     var state = try Interpreter.init(gpa);
     defer state.deinit();
 
-    for (stmts.items) |st| try state.tryExecStmt(st);
+    try state.tryExecStmt(.{ .block = stmts.items });
 }
 
 fn runPrompt(gpa: std.mem.Allocator) !void {
@@ -120,7 +113,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
             var stmts = std.ArrayList(ast.Stmt).init(gp_arena.allocator());
             try parser.parse(&stmts);
             if (Context.has_errored) continue;
-            for (stmts.items) |st| try state.tryExecStmt(st);
+            try state.tryExecStmt(.{.block = stmts.items});
         } else {
             const expr = try parser.tryExpression();
             if (expr) |e| {
