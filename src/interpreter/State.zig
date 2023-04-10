@@ -17,7 +17,7 @@ const Local = struct {
     tok: Token.Ty,
 };
 
-fn local(token: Token) Local {
+inline fn local(token: Token) Local {
     return .{ .line = token.line, .col = token.col, .tok = token.ty };
 }
 
