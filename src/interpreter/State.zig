@@ -76,6 +76,10 @@ pub fn deinit(state: *State) void {
     state.ctx.deinit();
 }
 
+pub inline fn resolve(state: *State, at: Token, depth: usize) AllocErr!void {
+    try state.locals.put(state.arena.allocator(), local(at), depth);
+}
+
 pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
     const v = state.visitExpr(e) catch |err| {
         switch (err) {
@@ -112,10 +116,6 @@ pub fn tryExecStmt(state: *State, stmt: ast.Stmt) AllocErr!void {
             else => return @errSetCast(AllocErr, err),
         }
     };
-}
-
-pub inline fn resolve(state: *State, line: usize, depth: usize) !void {
-    try state.locals.put(state.arena.allocator(), line, depth);
 }
 
 pub fn stringify(state: *State, obj: data.Value) ![]const u8 {
@@ -573,6 +573,12 @@ fn checkNumberOperands(
 }
 
 inline fn visitExpr(state: *State, e: ast.Expr) Result {
+//    std.debug.print("visiting: ", .{});
+//    var printer = ast.Printer{};
+//    printer.printExpr(e);
+//    std.debug.print("----------------\n", .{});
+//    state.current_env.print(0);
+//    std.debug.print("----------------\n", .{});
     return try e.accept(Result, State, expr_vt, state);
 }
 

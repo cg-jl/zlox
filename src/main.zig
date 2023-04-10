@@ -2,6 +2,7 @@ const std = @import("std");
 const Context = @import("context.zig");
 const Scanner = @import("Scanner.zig");
 const Token = @import("Token.zig");
+const Resolver = @import("interpreter/Resolver.zig");
 const Interpreter = @import("interpreter/State.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("ast.zig");
@@ -48,8 +49,15 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     defer stmts.deinit();
     try parser.parse(&stmts);
     if (Context.has_errored) return;
+
+
     var state = try Interpreter.init(gpa);
     defer state.deinit();
+    var resolver = Resolver.init(&state);
+    defer resolver.deinit();
+
+    try resolver.resolveBlock(stmts.items);
+    if (Context.has_errored) return;
 
     try state.tryExecStmt(.{ .block = stmts.items });
 }
@@ -71,6 +79,9 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     var gp_arena = std.heap.ArenaAllocator.init(gpa);
     var state = try Interpreter.init(gpa);
     defer state.deinit();
+
+    var resolver = Resolver.init(&state);
+    defer resolver.deinit();
 
     defer builder.deinit();
     defer gp_arena.deinit();
@@ -113,10 +124,14 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
             var stmts = std.ArrayList(ast.Stmt).init(gp_arena.allocator());
             try parser.parse(&stmts);
             if (Context.has_errored) continue;
+            try resolver.resolveBlock(stmts.items);
+            if (Context.has_errored) continue;
             try state.tryExecStmt(.{.block = stmts.items});
         } else {
             const expr = try parser.tryExpression();
             if (expr) |e| {
+                try resolver.resolveExpr(e);
+                if (Context.has_errored) continue;
                 try state.tryPrintExpr(e);
             }
         }

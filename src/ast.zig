@@ -75,7 +75,7 @@ pub const Expr = union(enum(u4)) {
         return .{ .@"var" = name };
     }
 
-    pub const nil = .{ .literal = .{ .nil = {} } };
+    pub const nil: Expr = .{ .literal = .{ .nil = {} } };
 
     pub fn literal(token: Token) Expr {
         return .{ .literal = token.extractLiteral() };

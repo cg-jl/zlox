@@ -87,3 +87,19 @@ pub fn get(
         };
     }
 }
+
+fn makeTab(t: usize) void {
+    var i: usize = 0;
+    while (i < t) : (i += 1) {
+        std.debug.print("  ", .{});
+    }
+}
+
+pub fn print(e: *const Env, tab: usize) void {
+    if (e.enclosing) |a| a.print(tab + 1);
+    var it = e.values.iterator();
+    while (it.next()) |entry| {
+        makeTab(tab);
+        std.debug.print("{s}: {}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    }
+}

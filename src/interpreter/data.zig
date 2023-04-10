@@ -136,7 +136,7 @@ pub const CallableVT = struct {
 };
 
 pub const Signal = error{ RuntimeError, Return };
-const AllocErr = std.mem.Allocator.Error;
+pub const AllocErr = std.mem.Allocator.Error;
 pub const AllocOrSignal = Signal || std.mem.Allocator.Error;
 pub const Error = struct {
     token: Token,
