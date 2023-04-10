@@ -13,7 +13,11 @@ pub fn main() !u8 {
         return 64;
     }
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .enable_memory_limit = true,
+    }){
+        .requested_memory_limit = 4 << 30, // no more than 4GiB
+    };
     defer _ = gpa.deinit();
 
     try Scanner.initKeywords(gpa.allocator());
