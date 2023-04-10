@@ -50,7 +50,6 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     try parser.parse(&stmts);
     if (Context.has_errored) return;
 
-
     var state = try Interpreter.init(gpa);
     defer state.deinit();
     var resolver = Resolver.init(&state);
@@ -59,7 +58,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     try resolver.resolveBlock(stmts.items);
     if (Context.has_errored) return;
 
-    try state.tryExecStmt(.{ .block = stmts.items });
+    try state.tryExecBlock(stmts.items);
 }
 
 fn runPrompt(gpa: std.mem.Allocator) !void {
@@ -126,7 +125,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
             if (Context.has_errored) continue;
             try resolver.resolveBlock(stmts.items);
             if (Context.has_errored) continue;
-            try state.tryExecStmt(.{.block = stmts.items});
+            try state.tryExecBlock(stmts.items);
         } else {
             const expr = try parser.tryExpression();
             if (expr) |e| {

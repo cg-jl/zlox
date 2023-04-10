@@ -315,3 +315,4 @@ fn printFuncDecl(p: *Printer, decl: ast.FuncDecl) void {
     std.debug.print("body = ", .{});
     p.printBlock(decl.body);
 }
+

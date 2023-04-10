@@ -111,8 +111,8 @@ fn resolveReturn(r: *Resolver, ret: ast.Stmt.Return) Result {
         if (r.current_function == .initializer) {
             context.reportToken(ret.keyword, "Cannot return a value from an initializer");
         }
-        try r.resolveExpr(ret.value);
     }
+    try r.resolveExpr(ret.value);
 }
 
 fn resolveVarSt(r: *Resolver, v: ast.Stmt.Var) Result {
@@ -208,7 +208,6 @@ fn resolveFuncDecl(r: *Resolver, func: ast.FuncDecl, ty: FuncType) Result {
     }
 
     try r.resolveBlock(func.body);
-
 }
 
 pub fn resolveBlock(r: *Resolver, block: []const ast.Stmt) Result {
@@ -250,7 +249,7 @@ fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
         }
     }
 
-    std.log.warn("Could not find '{s}'", .{name.lexeme});
+    std.log.warn("Could not find '{s}', assuming it's global", .{name.lexeme});
     // Assume it's global
 }
 

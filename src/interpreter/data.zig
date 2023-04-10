@@ -100,8 +100,13 @@ pub const Function = struct {
             try env.define(st.arena.allocator(), param.lexeme, args[i]);
         }
 
+        const block_env: *Env = try st.env_pool.create();
+        defer st.env_pool.destroy(block_env);
+
+        block_env.* = .{.enclosing = env};
+
         const ret_val: Value = catchReturn: {
-            st.executeBlockIn(func.decl.body, env) catch |err| {
+            st.executeBlockIn(func.decl.body, block_env) catch |err| {
                 if (err == error.Return) {
                     const ret = st.ret_val orelse Value.nil();
                     st.ret_val = null;

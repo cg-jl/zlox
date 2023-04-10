@@ -28,6 +28,8 @@ pub const Expr = union(enum(u4)) {
     get: Get,
     set: Set,
 
+
+
     pub const Literal = Token.TaggedLiteral;
 
     // count == 12 => u4
@@ -327,3 +329,13 @@ pub const FuncDecl = struct {
     params: []const Token,
     body: []const Stmt,
 };
+
+pub fn printExpr(e: Expr) void {
+    var printer = Printer{};
+    printer.printExpr(e);
+}
+
+pub fn printStmt(e: Stmt) void {
+    var printer = Printer{};
+    printer.printStmt(e);
+}

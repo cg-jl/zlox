@@ -101,8 +101,11 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
     std.debug.print("{}\n", .{v});
 }
 
-pub fn tryExecStmt(state: *State, stmt: ast.Stmt) AllocErr!void {
-    state.visitStmt(stmt) catch |err| {
+pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
+    const env: *Env = try state.env_pool.create();
+    defer state.env_pool.destroy(env);
+    env.* = .{.enclosing = state.current_env};
+    state.executeBlockIn(stmts, env) catch |err| {
         switch (err) {
             error.Return => {
                 std.log.err("Caught return in global context", .{});
@@ -449,9 +452,10 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
 }
 
 fn lookupVariable(state: *State, v: Token) Result {
+
     const distance = state.locals.get(local(v));
     if (distance) |d| {
-        return state.current_env.getAt(d, v.lexeme) orelse .{ .nil = {} };
+        return state.current_env.getAt(d, v.lexeme) orelse unreachable;
     } else {
         return try state.globals.get(v, &state.ctx);
     }
@@ -573,12 +577,6 @@ fn checkNumberOperands(
 }
 
 inline fn visitExpr(state: *State, e: ast.Expr) Result {
-//    std.debug.print("visiting: ", .{});
-//    var printer = ast.Printer{};
-//    printer.printExpr(e);
-//    std.debug.print("----------------\n", .{});
-//    state.current_env.print(0);
-//    std.debug.print("----------------\n", .{});
     return try e.accept(Result, State, expr_vt, state);
 }
 
