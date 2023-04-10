@@ -77,6 +77,7 @@ ty: Ty,
 lexeme: []const u8,
 literal: Literal,
 line: u32,
+col: u32,
 
 pub fn extractLiteral(tok: Token) TaggedLiteral {
     return switch (tok.ty) {

@@ -36,6 +36,7 @@ pub fn deinitKeywords(keywords_gpa: std.mem.Allocator) void {
 const Scanner = @This();
 
 source: []const u8,
+line_start: u32 = 0,
 start: u32 = 0,
 current: u32 = 0,
 line: u32 = 1,
@@ -59,6 +60,7 @@ pub fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
     try tokens.append(Token{
         .ty = .EOF,
         .lexeme = "",
+        .col = scn.column(),
         .literal = .{ .none = {} },
         .line = scn.line,
     });
@@ -115,7 +117,7 @@ fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
         },
         ' ', '\r', '\t' => {},
         '\n' => {
-            scn.line += 1;
+            scn.advanceLine();
         },
         '"' => return try scn.string(tokens),
         else => {
@@ -160,7 +162,7 @@ fn number(scn: *Scanner, tokens: *Tokens) !void {
 
 fn string(scn: *Scanner, tokens: *Tokens) !void {
     while (!scn.isAtEnd() and scn.peek() != '"') {
-        if (scn.peek() == '\n') scn.line += 1;
+        if (scn.peek() == '\n') scn.advanceLine();
         scn.current += 1;
     }
 
@@ -195,9 +197,15 @@ fn advance(scn: *Scanner) u8 {
     return ch;
 }
 
+fn advanceLine(scn: *Scanner) void {
+    scn.line += 1;
+    scn.line_start = scn.current;
+}
+
 fn token(scn: *const Scanner, ty: Token.Ty, lit: Token.Literal) Token {
     return Token{
         .line = scn.line,
+        .col = scn.column(),
         .lexeme = scn.source[scn.start..scn.current],
         .ty = ty,
         .literal = lit,
@@ -206,4 +214,8 @@ fn token(scn: *const Scanner, ty: Token.Ty, lit: Token.Literal) Token {
 
 fn tokenFromTy(scn: *const Scanner, ty: Token.Ty) Token {
     return scn.token(ty, .{ .none = {} });
+}
+
+inline fn column(scn: *const Scanner) u32 {
+    return scn.current - scn.line_start;
 }

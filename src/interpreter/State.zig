@@ -12,12 +12,13 @@ const Result = data.Result;
 const VoidResult = data.AllocOrSignal!void;
 
 const Local = struct {
-    line: usize,
+    line: u32,
+    col: u32,
     tok: Token.Ty,
 };
 
 fn local(token: Token) Local {
-    return .{ .line = token.line, .tok = token.ty };
+    return .{ .line = token.line, .col = token.col, .tok = token.ty };
 }
 
 globals: *Env,
