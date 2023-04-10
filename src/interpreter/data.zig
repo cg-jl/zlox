@@ -6,15 +6,55 @@ const Env = @import("Env.zig");
 const Ctx = @import("Ctx.zig");
 pub const Result = AllocOrSignal!Value;
 
-pub const Value = union(enum(u3)) {
+pub const FatStr = struct {
+    was_allocated: bool,
     string: []const u8,
+};
+
+pub const Value = union(enum(u3)) {
+    string: FatStr,
     num: f64,
     boolean: bool,
     callable: CallableVT,
     func: Function,
-    class: Class,
+    class: *Class,
     instance: *Instance,
     nil: void,
+
+    pub fn depcount(self: *const Value) usize {
+        if (self.* == .class) return self.class.instance_count +
+            self.class.refcount;
+        if (self.* == .instance) return self.instance.refcount;
+        return 0;
+    }
+
+    // The value went out of scope
+    pub fn dispose(self: *Value, state: *State) void {
+        if (self.* == .class) {
+            // we have our own env for the super thing
+            if (self.class.superclass) |super| {
+                const env: ?*Env = getEnv: {
+                    var it = self.class.methods.valueIterator();
+                    const v = it.next() orelse break :getEnv null;
+                    break :getEnv v.closure;
+                };
+                if (env) |e| {
+                    state.disposeEnv(e);
+                }
+                super.refcount -= 1;
+            }
+            self.class.methods.deinit(state.arena.allocator());
+            state.class_pool.destroy(self.class);
+        } else if (self.* == .instance) {
+            self.instance.refcount -= 1;
+            if (self.instance.refcount == 0) {
+                self.instance.class.instance_count -= 1;
+                self.instance.fields.deinit(state.arena.allocator());
+            }
+        } else if (self.* == .string and self.string.was_allocated) {
+            state.ctx.ally().free(self.string.string);
+        }
+    }
 
     pub fn nil() Value {
         return .{ .nil = {} };
@@ -36,7 +76,7 @@ pub const Value = union(enum(u3)) {
         writer: anytype,
     ) @TypeOf(writer).Error!void {
         switch (v) {
-            .string => |s| try writer.print("{s}", .{s}),
+            .string => |s| try writer.print("{s}", .{s.string}),
             // TODO: make endsWith(".0") cut
             .num => |n| try writer.print("{}", .{n}),
             .boolean => |b| try writer.print("{}", .{b}),
@@ -55,7 +95,9 @@ pub const Class = struct {
     methods: std.StringHashMapUnmanaged(Function),
     // we can cache the init method when it's called since we cannot edit the "methods" list.
     init_method: ?Function,
-    superclass: ?*const Class,
+    superclass: ?*Class,
+    refcount: usize = 0,
+    instance_count: usize = 0,
     fn call(p: *const anyopaque, i: *State, args: []const Value) Result {
         const class = @ptrCast(*const Class, @alignCast(@alignOf(Class), p));
         const instance: *Instance = try i.instance_pool.create();
@@ -93,17 +135,16 @@ pub const Function = struct {
     pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const Value) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
         // Load in the new environment
-        const env: *Env = try st.env_pool.create();
-        defer st.env_pool.destroy(env);
-        env.* = Env{ .enclosing = func.closure };
+        const env: *Env = try st.newEnv(func.closure);
+        defer st.disposeEnv(env);
         for (func.decl.params, 0..) |param, i| {
             try env.define(st.arena.allocator(), param.lexeme, args[i]);
         }
 
-        const block_env: *Env = try st.env_pool.create();
-        defer st.env_pool.destroy(block_env);
+        const block_env: *Env = try st.newEnv(env);
+        defer st.disposeEnv(block_env);
 
-        block_env.* = .{.enclosing = env};
+        block_env.* = .{ .enclosing = env };
 
         const ret_val: Value = catchReturn: {
             st.executeBlockIn(func.decl.body, block_env) catch |err| {
@@ -149,6 +190,7 @@ pub const Error = struct {
 };
 
 pub const Instance = struct {
-    class: *const Class,
+    class: *Class,
     fields: std.StringHashMapUnmanaged(Value) = .{},
+    refcount: usize,
 };

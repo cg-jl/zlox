@@ -56,10 +56,14 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
 
     var state = try Interpreter.init(gpa);
     defer state.deinit();
-    var resolver = Resolver.init(&state);
-    defer resolver.deinit();
 
-    try resolver.resolveBlock(stmts.items);
+    // Make sure to free resolver's memory
+    {
+        var resolver = Resolver.init(&state);
+        defer resolver.deinit();
+        try resolver.resolveBlock(stmts.items);
+    }
+
     if (Context.has_errored) return;
 
     try state.tryExecBlock(stmts.items);

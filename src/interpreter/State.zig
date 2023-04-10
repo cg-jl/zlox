@@ -21,6 +21,9 @@ fn local(token: Token) Local {
     return .{ .line = token.line, .col = token.col, .tok = token.ty };
 }
 
+// TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
+// state, for the env stuff
+
 globals: *Env,
 current_env: *Env,
 ctx: Ctx,
@@ -28,10 +31,13 @@ ctx: Ctx,
 // We'll solve this properly by just storing its line,
 // since there can only be one variable declaration in one line.
 locals: std.AutoHashMapUnmanaged(Local, usize),
+// TODO: we might want our own env pool, to be able to reuse memory. Not
+// measured yet.
 env_pool: std.heap.MemoryPool(Env),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
+class_pool: std.heap.MemoryPool(data.Class),
 arena: std.heap.ArenaAllocator,
 timer: std.time.Timer,
 ret_val: ?data.Value = null,
@@ -62,6 +68,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
         .locals = .{},
         .env_pool = env_pool,
         .instance_pool = std.heap.MemoryPool(data.Instance).init(gpa),
+        .class_pool = std.heap.MemoryPool(data.Class).init(gpa),
         .arena = arena_gpa,
         // let's pretend this cannot error for now. Misusing a toy language interpreter
         // in a seccomp environment is hard to do.
@@ -72,8 +79,25 @@ pub fn init(gpa: std.mem.Allocator) !State {
 pub fn deinit(state: *State) void {
     state.env_pool.deinit();
     state.instance_pool.deinit();
+    state.class_pool.deinit();
     state.arena.deinit();
     state.ctx.deinit();
+}
+
+pub fn newEnv(state: *State, enclosing: ?*Env) AllocErr!*Env {
+    const env: *Env = try state.env_pool.create();
+    env.* = .{ .enclosing = enclosing };
+    return env;
+}
+
+pub fn disposeEnv(state: *State, env: *Env) void {
+    // Only dispose of values that have no other refs. This should clean up 90%
+    // of the values in the scope, if not all.
+    var it = env.values.valueIterator();
+    while (it.next()) |v| if (v.depcount() == 0) v.dispose(state);
+    // Dispose of the memory for the map too!
+    env.values.deinit(state.arena.allocator());
+    state.env_pool.destroy(env);
 }
 
 pub inline fn resolve(state: *State, at: Token, depth: usize) AllocErr!void {
@@ -102,9 +126,7 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
 }
 
 pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
-    const env: *Env = try state.env_pool.create();
-    defer state.env_pool.destroy(env);
-    env.* = .{.enclosing = state.current_env};
+    const env: *Env = try state.newEnv(state.current_env);
     state.executeBlockIn(stmts, env) catch |err| {
         switch (err) {
             error.Return => {
@@ -163,26 +185,34 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         .{ .nil = {} },
     );
 
-    var superclass: ?*const data.Class = null;
+    var superclass: ?*data.Class = null;
     var class_env = state.current_env;
     if (stmt.superclass) |sp| {
         const super = try state.lookupVariable(sp);
-        const superc = switch (super) {
-            .class => |*c| c,
+        const superc: *data.Class = switch (super) {
+            .class => |c| c,
             else => {
                 state.ctx.report(sp, "Super class must be a class");
                 return error.RuntimeError;
             },
         };
 
-        class_env = try state.env_pool.create();
-        class_env.* = .{ .enclosing = state.current_env };
+        // we can only have one level of inheritance.
+        // So we can have the class have a refcount
+
+        class_env = try state.newEnv(state.current_env);
+        superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
-        try class_env.define(state.arena.allocator(), "super", .{ .class = superc.* });
+        try class_env.define(state.arena.allocator(), "super", .{ .class = superc });
         superclass = superc;
     }
 
+    errdefer if (stmt.superclass) |_| state.disposeEnv(class_env);
+
     var methods: std.StringHashMapUnmanaged(data.Function) = .{};
+
+    defer if (stmt.superclass) |_| if (methods.size == 0)
+        state.disposeEnv(class_env);
 
     var init_method: ?data.Function = null;
     for (stmt.methods) |m| {
@@ -202,23 +232,21 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         .name = stmt.name.lexeme,
     };
 
+    const classp = try state.class_pool.create();
+    classp.* = class;
+
     // This cannot fail with runtime error (or worse, return) because
     // we already defined it.
     state.current_env.assign(
         stmt.name,
-        .{ .class = class },
+        .{ .class = classp },
         &state.ctx,
     ) catch |err| return @errSetCast(std.mem.Allocator.Error, err);
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
-    const env: *Env = try state.env_pool.create();
-    env.* = .{ .enclosing = state.current_env };
-    defer {
-        // but we also want to deinitialize all of them without leaving danglings...
-        env.values.deinit(state.arena.allocator());
-        state.env_pool.destroy(env);
-    }
+    const env: *Env = try state.newEnv(state.current_env);
+    defer state.disposeEnv(env);
 
     try state.executeBlockIn(block, env);
 }
@@ -361,7 +389,7 @@ fn visitSuper(state: *State, e: ast.Expr.Super) Result {
 }
 
 pub fn unbind(state: *State, f: data.Function) void {
-    state.env_pool.destroy(f.closure);
+    state.disposeEnv(f.closure);
 }
 
 pub fn bind(
@@ -369,14 +397,12 @@ pub fn bind(
     f: data.Function,
     instancep: *data.Instance,
 ) AllocErr!data.Function {
-    const env: *Env = try state.env_pool.create();
-    env.* = Env{
-        .enclosing = f.closure,
-    };
-    errdefer state.env_pool.destroy(env);
+    const env: *Env = try state.newEnv(f.closure);
+    errdefer state.disposeEnv(env);
 
     // this sucks, because now I have to make instances pointers. Not cool!
     try env.define(state.arena.allocator(), "this", .{ .instance = instancep });
+    instancep.refcount += 1;
 
     return data.Function{
         .decl = f.decl,
@@ -393,7 +419,7 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
     const callee = try state.visitExpr(call.callee.*);
     const vt: data.CallableVT = switch (callee) {
         .func => |*f| f.getVT(),
-        .class => |*c| data.Class.getVT(c),
+        .class => |c| data.Class.getVT(c),
         .callable => |t| t,
         else => {
             state.ctx.report(call.paren, "Can only call functions and classes");
@@ -422,7 +448,7 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
 }
 
 fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
-    const value = try state.visitExpr(assign.value.*);
+    var value = try state.visitExpr(assign.value.*);
 
     const distance = state.locals.get(local(assign.name));
     if (distance) |d| {
@@ -452,7 +478,6 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
 }
 
 fn lookupVariable(state: *State, v: Token) Result {
-
     const distance = state.locals.get(local(v));
     if (distance) |d| {
         return state.current_env.getAt(d, v.lexeme) orelse unreachable;
@@ -489,7 +514,7 @@ fn isTruthy(obj: data.Value) bool {
 
 fn visitLiteral(_: *State, l: ast.Expr.Literal) Result {
     return switch (l) {
-        .string => |s| .{ .string = s },
+        .string => |s| .{ .string = .{ .string = s, .was_allocated = false } },
         .num => |n| .{ .num = n },
         .boolean => |b| .{ .boolean = b },
         .nil => .{ .nil = {} },
@@ -521,11 +546,14 @@ fn visitBinary(state: *State, b: ast.Expr.Binary) Result {
                 },
                 .string => |ls| switch (right) {
                     .string => |rs| return .{
-                        .string = try std.fmt.allocPrint(
-                            state.ctx.ally(),
-                            "{s}{s}",
-                            .{ ls, rs },
-                        ),
+                        .string = .{
+                            .string = try std.fmt.allocPrint(
+                                state.ctx.ally(),
+                                "{s}{s}",
+                                .{ ls.string, rs.string },
+                            ),
+                            .was_allocated = true,
+                        },
                     },
                     else => {},
                 },

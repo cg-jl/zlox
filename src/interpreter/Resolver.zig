@@ -18,6 +18,7 @@ pub fn init(interpreter: *State) Resolver {
 }
 
 pub fn deinit(r: *Resolver) void {
+    for (r.scopes.items) |*s| s.deinit(r.ally());
     r.scopes.deinit(r.ally());
 }
 
