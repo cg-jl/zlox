@@ -1,10 +1,12 @@
-// zig run -Doptimize=ReleaseFast opt_local_hash.zig
+// zig run -Doptimize=ReleaseFast src/benchmarks/opt_local_hash.zig --enable-cache --cache-dir zig-cache
 // Locals already have unique representations.
 // If their packed representation uses lines as the last bits,
 // we can have a "fast" hash (nothing special to do) without
 // sacrificing too many collisions.
 
 const std = @import("std");
+const linux = std.os.linux;
+const makeTag = @import("pretty.zig").makeTag;
 
 var prng = std.rand.DefaultPrng.init(0);
 const random = prng.random();
@@ -16,10 +18,6 @@ const Local = packed struct {
     col: u32,
     line: u16,
 };
-
-comptime {
-    std.testing.expect(@bitSizeOf(Local) < 64) catch unreachable;
-}
 
 // NOTE: we're generating uniform locals, which is not the case.
 // The locals are more akin to a normal distribution, where I don't exactly know
@@ -34,43 +32,21 @@ fn randomLocal() Local {
         .line = random.uintAtMost(u16, std.math.maxInt(u16)),
     };
 }
-const throughput_tags = [_][]const u8{ "B/s", "MB/s", "GB/s", "TB/s" };
 const time_tags = [_][]const u8{ "ns", "us", "ms", "s" };
 
-const Result = struct {
-    read_all_in: u64,
-    read_random: u64,
-    read_mixed: u64,
-
-    pub fn format(
-        slf: Result,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        try writer.print("{{ all_in: {}, random: {}, mixed: {} }}", .{
-            Tagged.calculate(slf.read_all_in, &throughput_tags),
-            Tagged.calculate(slf.read_random, &throughput_tags),
-            Tagged.calculate(slf.read_mixed, &throughput_tags),
-        });
-    }
-};
-
-const PrettyThroughput = struct {
+const Measurement = struct {
     mean: f64,
     stddev: f64,
-    throughput: u64,
     min: u64,
     max: u64,
 
     pub fn format(
-        slf: PrettyThroughput,
+        slf: Measurement,
         comptime fmt: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) @TypeOf(writer).Error!void {
-        try makeTag(u64, slf.throughput, 1024, &throughput_tags).format("", std.fmt.FormatOptions{}, writer);
-        try writer.writeAll("\tμ = ");
+        try writer.writeAll("μ = ");
         try makeTag(f64, slf.mean, 1000.0, &time_tags).format(fmt, options, writer);
         try writer.writeAll("/it \t σ = ");
         try makeTag(f64, slf.stddev, 1000.0, &time_tags).format(fmt, options, writer);
@@ -80,7 +56,7 @@ const PrettyThroughput = struct {
 
 // NOTE: we're integrating the 'elapsed sum' already to know if we're past
 // `max_time` during the benchmarks, so why not just accept it as a parameter?
-fn postThroughput(elapsed: []const u64, elapsed_sum: u64) PrettyThroughput {
+fn calculateMeasurement(elapsed: []const u64, elapsed_sum: u64) Measurement {
     const mean = @intToFloat(f64, elapsed_sum) / @intToFloat(f64, elapsed.len);
     const stddev = std.math.sqrt(sumVariance: {
         var variance: f64 = 0;
@@ -93,22 +69,12 @@ fn postThroughput(elapsed: []const u64, elapsed_sum: u64) PrettyThroughput {
 
     const minmax = std.mem.minMax(u64, elapsed);
 
-    const throughput = calcThroughput(elapsed_sum, elapsed.len);
-
-    return PrettyThroughput{
+    return Measurement{
         .mean = mean,
         .stddev = stddev,
-        .throughput = throughput,
         .min = minmax.min,
         .max = minmax.max,
     };
-}
-
-fn calcThroughput(elapsed_ns: u64, iteration_count: usize) u64 {
-    const byte_count = iteration_count * @sizeOf(Local);
-    const elapsed_s = @intToFloat(f64, elapsed_ns) / std.time.ns_per_s;
-    const throughput = @floatToInt(u64, @intToFloat(f64, byte_count) / elapsed_s);
-    return throughput;
 }
 
 const Config = struct {
@@ -171,7 +137,7 @@ fn benchmark(
             try elapsed_array.append(gpa, elapsed);
         }
 
-        break :benchAllIn postThroughput(elapsed_array.items, total_elapsed);
+        break :benchAllIn calculateMeasurement(elapsed_array.items, total_elapsed);
     };
     std.log.info("read all in: {d:.3}", .{read_all_in});
 
@@ -204,7 +170,7 @@ fn benchmark(
             try elapsed_array.append(gpa, elapsed);
         }
 
-        break :benchRandom postThroughput(elapsed_array.items, total_elapsed);
+        break :benchRandom calculateMeasurement(elapsed_array.items, total_elapsed);
     };
     std.log.info("read random: {d:.3}", .{read_random});
 
@@ -241,36 +207,9 @@ fn benchmark(
             try elapsed_array.append(gpa, elapsed);
         }
 
-        break :benchMixed postThroughput(elapsed_array.items, total_elapsed);
+        break :benchMixed calculateMeasurement(elapsed_array.items, total_elapsed);
     };
     std.log.info("read mixed: {d:.3}", .{read_mixed});
-}
-
-fn Tagged(comptime T: type) type {
-    return struct {
-        tag: []const u8,
-        value: T,
-
-        const Tag = @This();
-
-        pub fn format(
-            slf: Tag,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) @TypeOf(writer).Error!void {
-            try std.fmt.formatType(slf.value, fmt, options, writer, std.options.fmt_max_depth);
-            try writer.writeAll(slf.tag);
-        }
-    };
-}
-fn makeTag(comptime T: type, orig: T, gap: T, tags: []const []const u8) Tagged(T) {
-    var value = orig;
-    const tag = for (tags[0 .. tags.len - 1]) |t| {
-        if (value < gap) break t;
-        value /= gap;
-    } else tags[tags.len - 1];
-    return .{ .tag = tag, .value = value };
 }
 
 const JustPackIt = struct {
