@@ -180,7 +180,7 @@ pub fn stringify(state: *State, obj: data.Value) ![]const u8 {
     return try std.fmt.allocPrint(state.ctx.ally(), "{}", .{obj.*});
 }
 
-fn getClock(_: *const anyopaque, state: *State, _: []const data.Value) Result {
+fn getClock(_: *const anyopaque, state: *State, _: std.ArrayListUnmanaged(data.Value)) Result {
     const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
     const value = @intToFloat(f64, state.timer.read());
     return .{ .num = value / conversion };
@@ -468,14 +468,14 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
         return error.RuntimeError;
     }
 
-    // use underlying GPA to be able to free the list, without messing with the arena.
-    var arguments  = try state.arena.allocator().alloc(data.Value, call.arguments.len);
-    defer state.arena.allocator().free(arguments);
+    // We create the arguments array with preallocated capacity, then move it into the callee so that they
+    // can instantly use it as the environment
+    var arguments = try std.ArrayListUnmanaged(data.Value).initCapacity(state.arena.allocator(), call.arguments.len);
+    arguments.items.len = call.arguments.len;
 
-    for (call.arguments, arguments) |c, *a| {
+    for (call.arguments, arguments.items) |c, *a| {
         a.* = try state.visitExpr(c);
     }
-    defer for (arguments) |*a| a.dispose(state);
 
     return try vt.call(vt.ptr, state, arguments);
 }

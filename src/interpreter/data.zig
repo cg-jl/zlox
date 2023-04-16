@@ -98,14 +98,15 @@ pub const Class = struct {
     superclass: ?*Class,
     refcount: usize = 0,
     instance_count: usize = 0,
-    fn call(p: *const anyopaque, i: *State, args: []const Value) Result {
+    fn call(p: *const anyopaque, i: *State, args: std.ArrayListUnmanaged(Value)) Result {
         const class = @ptrCast(*const Class, @alignCast(@alignOf(Class), p));
         const instance: *Instance = try i.instance_pool.create();
         errdefer i.instance_pool.destroy(instance);
         if (class.init_method) |im| {
             const bound = try i.bind(im, instance);
             defer i.unbind(bound);
-            _ = try bound.getVT().call(&bound, i, args);
+            var res = try Function.makeCall(&bound, i, args);
+            res.dispose(i);
         }
         return Value{ .instance = instance };
     }
@@ -132,12 +133,13 @@ pub const Function = struct {
     closure: *Env,
     is_init: bool,
 
-    pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const Value) Result {
+    pub fn makeCall(ptr: *const anyopaque, st: *State, args: std.ArrayListUnmanaged(Value)) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
         // Load in the new environment
         const env: *Env = try st.newEnv(func.closure);
         defer st.disposeEnv(env);
-        try env.values.appendSlice(st.arena.allocator(), args[0..func.decl.params.len]);
+        // Move the pushed arguments to the environment
+        env.values = args;
 
         const block_env: *Env = try st.newEnv(env);
         defer st.disposeEnv(block_env);
@@ -176,7 +178,7 @@ pub const CallableVT = struct {
     ptr: *const anyopaque,
     arity: u8, // cannot be > 255
     repr: []const u8,
-    call: *const fn (*const anyopaque, *State, []const Value) Result,
+    call: *const fn (*const anyopaque, *State, std.ArrayListUnmanaged(Value)) Result,
 };
 
 pub const Signal = error{ RuntimeError, Return };
