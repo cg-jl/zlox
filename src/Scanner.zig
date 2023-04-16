@@ -39,7 +39,7 @@ source: []const u8,
 line_start: u32 = 0,
 start: u32 = 0,
 current: u32 = 0,
-line: u32 = 1,
+line: u16 = 1,
 
 pub fn init(source: []const u8) Scanner {
     return .{

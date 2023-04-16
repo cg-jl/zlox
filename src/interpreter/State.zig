@@ -11,8 +11,8 @@ const State = @This();
 const Result = data.Result;
 const VoidResult = data.AllocOrSignal!void;
 
-const Local = struct {
-    line: u32,
+const Local = packed struct {
+    line: u16,
     col: u32,
     tok: Token.Ty,
 };

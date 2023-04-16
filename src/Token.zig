@@ -76,7 +76,7 @@ pub const Literal = union {
 ty: Ty,
 lexeme: []const u8,
 literal: Literal,
-line: u32,
+line: u16,
 col: u32,
 
 pub fn extractLiteral(tok: Token) TaggedLiteral {
