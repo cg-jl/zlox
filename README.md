@@ -85,46 +85,21 @@ Measuring...
 
 
 ### `fib_opt.lox` - Basic fibonacci loop
-```
-warning: Could not find 'clock', assuming it's global
-warning: Could not find 'clock', assuming it's global
-1.02334155e+08
-5.35776e-04
-```
-Around ~500us. 1000x slower than C version
 
-
-- `-Doptimize=ReleaseSafe` run:
 ```
-warning: Could not find 'clock', assuming it's global
-warning: Could not find 'clock', assuming it's global
-1.02334155e+08
-8.4194e-05
+1.65580141e+08
+5.5608e-05
 ```
 
-Around 84 us.
-
+Around 55 us.
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
-warning: Could not find 'clock', assuming it's global
-warning: Could not find 'clock', assuming it's global
- 1.65580141e+08
-1.239713567557e+03
-```
-This sums up to 20m 39.713 s. Painfully slow.
-
-- `-Doptimize=ReleaseSafe` run:
-```
-warning: Could not find 'clock', assuming it's global
-warning: Could not find 'clock', assuming it's global
 1.65580141e+08
-1.57722453935e+02
+9.3612289879e+01
 ```
 
-About 2m 37s. Still painfully slow, but at least I don't have to go to bed whlie
-waiting for the program to finish. This demonstrates that Zig is doing a great
-job at giving LLVM hints, since it can make my program ~8x faster without going
-into unsafe UB.
+About ~2m 37s~ 1m 33s. A **40.65%** increase in performance, just by
+adding an extra index to the distance table.

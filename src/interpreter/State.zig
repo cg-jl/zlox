@@ -21,6 +21,11 @@ inline fn local(token: Token) Local {
     return .{ .line = token.line, .col = token.col, .tok = token.ty };
 }
 
+const Depth = struct {
+    env: usize,
+    stack: u32,
+};
+
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
 
@@ -30,7 +35,7 @@ ctx: Ctx,
 // Apparently it's an expr-to-integer map. WTF?
 // We'll solve this properly by just storing its line,
 // since there can only be one variable declaration in one line.
-locals: std.AutoHashMapUnmanaged(Local, usize),
+locals: std.AutoHashMapUnmanaged(Local, Depth),
 // TODO: we might want our own env pool, to be able to reuse memory. Not
 // measured yet.
 env_pool: std.heap.MemoryPool(Env),
@@ -50,9 +55,8 @@ pub fn init(gpa: std.mem.Allocator) !State {
 
     const globals: *Env = try env_pool.create();
     globals.* = .{ .enclosing = null };
-    try globals.define(
+    try globals.values.append(
         arena_gpa.allocator(),
-        "clock",
         .{ .callable = data.CallableVT{
             .ptr = undefined,
             .repr = "<native fn clock()>",
@@ -93,15 +97,18 @@ pub fn newEnv(state: *State, enclosing: ?*Env) AllocErr!*Env {
 pub fn disposeEnv(state: *State, env: *Env) void {
     // Only dispose of values that have no other refs. This should clean up 90%
     // of the values in the scope, if not all.
-    var it = env.values.valueIterator();
-    while (it.next()) |v| if (v.depcount() == 0) v.dispose(state);
+    for (env.values.items) |*v| if (v.depcount() == 0) v.dispose(state);
     // Dispose of the memory for the map too!
     env.values.deinit(state.arena.allocator());
     state.env_pool.destroy(env);
 }
 
-pub inline fn resolve(state: *State, at: Token, depth: usize) AllocErr!void {
-    try state.locals.put(state.arena.allocator(), local(at), depth);
+pub inline fn resolve(state: *State, at: Token, env_depth: usize, stack_depth: u32) AllocErr!void {
+    try state.locals.put(
+        state.arena.allocator(),
+        local(at),
+        .{ .env = env_depth, .stack = stack_depth },
+    );
 }
 
 pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
@@ -179,11 +186,8 @@ const stmt_vt = ast.Stmt.VisitorVTable(VoidResult, State){
 };
 
 fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
-    try state.current_env.define(
-        state.arena.allocator(),
-        stmt.name.lexeme,
-        .{ .nil = {} },
-    );
+    const class_value_idx = @intCast(u32, state.current_env.values.items.len);
+    try state.current_env.values.append(state.arena.allocator(), .{ .nil = {} });
 
     var superclass: ?*data.Class = null;
     var class_env = state.current_env;
@@ -203,7 +207,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         class_env = try state.newEnv(state.current_env);
         superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
-        try class_env.define(state.arena.allocator(), "super", .{ .class = superc });
+        try class_env.values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
     }
 
@@ -235,13 +239,8 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     const classp = try state.class_pool.create();
     classp.* = class;
 
-    // This cannot fail with runtime error (or worse, return) because
-    // we already defined it.
-    state.current_env.assign(
-        stmt.name,
-        .{ .class = classp },
-        &state.ctx,
-    ) catch |err| return @errSetCast(std.mem.Allocator.Error, err);
+    // We know it's at zero because it was the first thing that we pushed
+    state.current_env.assignAt(0, class_value_idx, .{ .class = classp });
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
@@ -276,7 +275,8 @@ fn visitVarStmt(state: *State, v: ast.Stmt.Var) VoidResult {
     if (v.init) |i| {
         value = try state.visitExpr(i);
     }
-    try state.current_env.define(state.arena.allocator(), v.name.lexeme, value);
+
+    try state.current_env.values.append(state.arena.allocator(), value);
 }
 
 fn visitPrint(state: *State, p: ast.Stmt.Print) VoidResult {
@@ -302,15 +302,12 @@ fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
         .closure = state.current_env,
         .is_init = false,
     };
-    try state.current_env.define(
-        state.arena.allocator(),
-        e.name.lexeme,
-        .{ .func = function },
-    );
+    try state.current_env.values.append(state.arena.allocator(), .{ .func = function });
 }
 
 fn visitExprStmt(state: *State, e: ast.Expr) VoidResult {
-    _ = try state.visitExpr(e);
+    var v = try state.visitExpr(e);
+    v.dispose(state);
 }
 
 fn visitSet(state: *State, e: ast.Expr.Set) Result {
@@ -363,13 +360,13 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     const distance = state.locals.get(local(e.keyword)) orelse unreachable;
-    const super: data.Value = state.current_env.getAt(distance, "super") orelse unreachable;
+    const super: data.Value = state.current_env.getAt(distance.env, distance.stack);
     const superclass: *const data.Class = switch (super) {
         .class => |c| c.superclass orelse unreachable,
         else => unreachable,
     };
 
-    const this: data.Value = state.current_env.getAt(distance - 1, "this") orelse unreachable;
+    const this: data.Value = state.current_env.getAt(distance.env - 1, 0);
 
     const obj: *data.Instance = switch (this) {
         .instance => |i| i,
@@ -401,7 +398,7 @@ pub fn bind(
     errdefer state.disposeEnv(env);
 
     // this sucks, because now I have to make instances pointers. Not cool!
-    try env.define(state.arena.allocator(), "this", .{ .instance = instancep });
+    try env.values.append(state.arena.allocator(), .{ .instance = instancep });
     instancep.refcount += 1;
 
     return data.Function{
@@ -450,17 +447,12 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
 fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
     var value = try state.visitExpr(assign.value.*);
 
-    const distance = state.locals.get(local(assign.name));
-    if (distance) |d| {
-        try state.current_env.assignAt(
-            state.arena.allocator(),
-            d,
-            assign.name.lexeme,
-            value,
-        );
-    } else {
-        try state.globals.assign(assign.name, value, &state.ctx);
-    }
+    const distance: Depth = state.locals.get(local(assign.name)) orelse @panic("Unresolved variable");
+    state.current_env.assignAt(
+        distance.env,
+        distance.stack,
+        value,
+    );
 
     return value;
 }
@@ -478,12 +470,9 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
 }
 
 fn lookupVariable(state: *State, v: Token) Result {
-    const distance = state.locals.get(local(v));
-    if (distance) |d| {
-        return state.current_env.getAt(d, v.lexeme) orelse unreachable;
-    } else {
-        return try state.globals.get(v, &state.ctx);
-    }
+    const distance: Depth = state.locals.get(local(v)) orelse @panic("unresolved variable");
+    const env: *Env = state.current_env.ancestor(distance.env) orelse @panic("must have env at distance");
+    return env.values.items[distance.stack];
 }
 
 fn visitUnary(state: *State, u: ast.Expr.Unary) Result {

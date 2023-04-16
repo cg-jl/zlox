@@ -32,6 +32,7 @@ pub fn main() !u8 {
 }
 
 fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
+    std.log.debug("runningn {s}", .{filename});
     const file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
     const stat = try file.stat();
@@ -59,7 +60,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
 
     // Make sure to free resolver's memory
     {
-        var resolver = Resolver.init(&state);
+        var resolver = try Resolver.init(&state);
         defer resolver.deinit();
         try resolver.resolveBlock(stmts.items);
     }
@@ -87,7 +88,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     var state = try Interpreter.init(gpa);
     defer state.deinit();
 
-    var resolver = Resolver.init(&state);
+    var resolver = try Resolver.init(&state);
     defer resolver.deinit();
 
     defer builder.deinit();

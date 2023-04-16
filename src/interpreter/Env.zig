@@ -6,7 +6,7 @@ const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
 
 enclosing: ?*Env = null,
-values: std.StringHashMapUnmanaged(data.Value) = .{},
+values: std.ArrayListUnmanaged(data.Value) = .{},
 
 pub fn ancestor(e: *Env, distance: usize) ?*Env {
     var curr = e;
@@ -19,31 +19,21 @@ pub fn ancestor(e: *Env, distance: usize) ?*Env {
 
 pub inline fn assignAt(
     e: *Env,
-    alloc: Alloc, // we don't store the allocator in all the envs, since it's common
     distance: usize,
-    name: []const u8,
+    index: u32,
     value: data.Value,
-) !void {
-    const env = e.ancestor(distance) orelse unreachable; // Java version would *nullptr
-    try env.values.put(alloc, name, value);
+) void {
+    const env = e.ancestor(distance) orelse @panic("Must have ancestor");
+    env.values.items[index] = value;
 }
 
 pub inline fn getAt(
     e: *Env,
     distance: usize,
-    name: []const u8,
-) ?data.Value {
+    index: u32,
+) data.Value {
     const env = e.ancestor(distance) orelse unreachable; // Java version would *nullptr
-    return env.values.get(name);
-}
-
-pub fn define(
-    e: *Env,
-    alloc: Alloc,
-    name: []const u8,
-    value: data.Value,
-) Alloc.Error!void {
-    try e.values.put(alloc, name, value);
+    return env.values.items[index];
 }
 
 pub fn assign(

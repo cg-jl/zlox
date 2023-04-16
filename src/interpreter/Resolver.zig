@@ -6,15 +6,23 @@ const data = @import("data.zig");
 
 const ast = @import("../ast.zig");
 
-const Scope = std.StringHashMapUnmanaged(bool);
+const VarInfo = packed struct {
+    initialized: bool,
+    stack_index: u32,
+};
+
+const Scope = std.StringHashMapUnmanaged(VarInfo);
 
 interpreter: *State,
 scopes: std.ArrayListUnmanaged(Scope) = .{},
 current_function: FuncType = FuncType.none,
 current_class: ClassType = ClassType.none,
 
-pub fn init(interpreter: *State) Resolver {
-    return .{ .interpreter = interpreter };
+pub fn init(interpreter: *State) !Resolver {
+    var res = Resolver{ .interpreter = interpreter };
+    try res.beginScope();
+    try res.defineName("clock");
+    return res;
 }
 
 pub fn deinit(r: *Resolver) void {
@@ -55,8 +63,7 @@ const stmt_vt = ast.Stmt.VisitorVTable(Result, Resolver){
 fn resolveInnerClass(r: *Resolver, methods: []const ast.Stmt.Function) Result {
     try r.beginScope();
     defer r.endScope();
-    const scope = r.latestScope() orelse unreachable;
-    try scope.put(r.ally(), "this", true);
+    try r.defineName("this");
     for (methods) |method| {
         const is_init = std.mem.eql(u8, "init", method.name.lexeme);
         const decltype: FuncType = if (is_init) .initializer else .method;
@@ -76,9 +83,7 @@ fn resolveClass(r: *Resolver, class: ast.Stmt.Class) Result {
         r.current_class = .subclass;
         try r.beginScope();
         defer r.endScope();
-        const scope = r.latestScope() orelse unreachable;
-        try scope.put(r.ally(), "super", true);
-
+        try r.defineName("super");
         try r.resolveInnerClass(class.methods);
     } else {
         try r.resolveInnerClass(class.methods);
@@ -182,7 +187,7 @@ fn resolveUnary(r: *Resolver, u: ast.Expr.Unary) Result {
 fn resolveVar(r: *Resolver, name: ast.Expr.Var) Result {
     if (r.latestScope()) |scope| {
         if (scope.get(name.lexeme)) |x| {
-            if (x == false) {
+            if (!x.initialized) {
                 context.reportToken(name, "Cannot read local variable in its own initializer");
             }
         }
@@ -229,29 +234,38 @@ fn declare(r: *Resolver, name: ast.Expr.Var) Result {
     if (get_or_put.found_existing) {
         context.reportToken(
             name,
-            "Variable with this nanme already declared in this scope.",
+            "Variable with this name already declared in this scope.",
         );
     }
 
-    get_or_put.value_ptr.* = false;
+    get_or_put.value_ptr.initialized = false;
+    get_or_put.value_ptr.stack_index = scope.size - 1;
+}
+
+fn defineName(r: *Resolver, name: []const u8) data.AllocErr!void {
+    const scope = r.latestScope() orelse @panic("should have scope to define");
+    const get_or_put: Scope.GetOrPutResult = try scope.getOrPut(r.ally(), name);
+    if (!get_or_put.found_existing) {
+        get_or_put.value_ptr.stack_index = scope.size - 1;
+    }
+    get_or_put.value_ptr.initialized = true;
 }
 
 fn define(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
-    const scope = r.latestScope() orelse return;
-    try scope.put(r.ally(), name.lexeme, true);
+    try r.defineName(name.lexeme);
 }
 
 fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
     var i: usize = r.scopes.items.len;
     while (i > 0) : (i -= 1) {
-        if (r.scopes.items[i - 1].contains(name.lexeme)) {
-            try r.interpreter.resolve(name, r.scopes.items.len - i);
+        const scope: *const Scope = &r.scopes.items[i - 1];
+        if (scope.get(name.lexeme)) |info| {
+            try r.interpreter.resolve(name, r.scopes.items.len - i, info.stack_index);
             return;
         }
     }
 
-    std.log.warn("Could not find '{s}', assuming it's global", .{name.lexeme});
-    // Assume it's global
+    context.reportToken(name, "Could not resolve variable");
 }
 
 fn beginScope(r: *Resolver) Result {

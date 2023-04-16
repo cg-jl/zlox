@@ -137,9 +137,7 @@ pub const Function = struct {
         // Load in the new environment
         const env: *Env = try st.newEnv(func.closure);
         defer st.disposeEnv(env);
-        for (func.decl.params, 0..) |param, i| {
-            try env.define(st.arena.allocator(), param.lexeme, args[i]);
-        }
+        try env.values.appendSlice(st.arena.allocator(), args[0..func.decl.params.len]);
 
         const block_env: *Env = try st.newEnv(env);
         defer st.disposeEnv(block_env);
@@ -157,7 +155,7 @@ pub const Function = struct {
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return func.closure.getAt(0, "this") orelse unreachable;
+        if (func.is_init) return func.closure.values.items[0];
         return ret_val;
     }
 
