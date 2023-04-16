@@ -91,18 +91,14 @@ Measuring...
 2.6028000000000002e-05
 ```
 
-Around 26 us. This was almost a 50% improvement, since here we are mostly
-accessing variables rather than creating or deleting environments, so here the
-local change had a more noticeable impact.
+Around 26 us. What I have improved does not affect here, since it's only run once.
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
 1.65580141e+08
-7.2669263567e+01
+4.5402189658e+01
 ```
 
-About ~1m 33s~ 1m 12s. A **21.86%** increase, this time from removing the
-hashing algorithm that wasn't really necessary since our local values are
-distributed enough to not cause collisions.
+About ~1m 12s~ 45s. A **37%** improvement, by avoiding creating a new environment.
