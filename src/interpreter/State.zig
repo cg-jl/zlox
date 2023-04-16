@@ -14,17 +14,38 @@ const VoidResult = data.AllocOrSignal!void;
 const Local = packed struct {
     line: u16,
     col: u32,
-    tok: Token.Ty,
+
+    pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
+};
+
+const LocalContext = struct {
+    pub fn eql(_: LocalContext, a: Local, b: Local) bool {
+        return @bitCast(Local.U, a) == @bitCast(Local.U, b);
+    }
+
+    pub fn hash(_: LocalContext, k: Local) u64 {
+        return @bitCast(Local.U, k);
+    }
 };
 
 inline fn local(token: Token) Local {
-    return .{ .line = token.line, .col = token.col, .tok = token.ty };
+    return .{
+        .line = token.line,
+        .col = token.col,
+    };
 }
 
 const Depth = struct {
     env: usize,
     stack: u32,
 };
+
+const LocalMap = std.HashMapUnmanaged(
+    Local,
+    Depth,
+    LocalContext,
+    std.hash_map.default_max_load_percentage,
+);
 
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
@@ -35,7 +56,7 @@ ctx: Ctx,
 // Apparently it's an expr-to-integer map. WTF?
 // We'll solve this properly by just storing its line,
 // since there can only be one variable declaration in one line.
-locals: std.AutoHashMapUnmanaged(Local, Depth),
+locals: LocalMap,
 // TODO: we might want our own env pool, to be able to reuse memory. Not
 // measured yet.
 env_pool: std.heap.MemoryPool(Env),
