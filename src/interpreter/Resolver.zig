@@ -213,7 +213,9 @@ fn resolveFuncDecl(r: *Resolver, func: ast.FuncDecl, ty: FuncType) Result {
         try r.define(param);
     }
 
-    try r.resolveBlock(func.body);
+    // Do not create a new scope for these. This makes shadowing arguments
+    // illegal, but they're mutable so it's OK.
+    for (func.body) |s| try r.resolveStmt(s);
 }
 
 pub fn resolveBlock(r: *Resolver, block: []const ast.Stmt) Result {

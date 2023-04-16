@@ -141,13 +141,9 @@ pub const Function = struct {
         // Move the pushed arguments to the environment
         env.values = args;
 
-        const block_env: *Env = try st.newEnv(env);
-        defer st.disposeEnv(block_env);
-
-        block_env.* = .{ .enclosing = env };
 
         const ret_val: Value = catchReturn: {
-            st.executeBlockIn(func.decl.body, block_env) catch |err| {
+            st.executeBlockIn(func.decl.body, env) catch |err| {
                 if (err == error.Return) {
                     const ret = st.ret_val orelse Value.nil();
                     st.ret_val = null;
