@@ -115,10 +115,15 @@ pub fn newEnv(state: *State, enclosing: ?*Env) AllocErr!*Env {
     return env;
 }
 
-pub fn disposeEnv(state: *State, env: *Env) void {
+// Clear environment, retaining old capacity.
+pub fn clearEnv(state: *State, env: *Env) void {
     // Only dispose of values that have no other refs. This should clean up 90%
     // of the values in the scope, if not all.
     for (env.values.items) |*v| if (v.depcount() == 0) v.dispose(state);
+    env.values.clearRetainingCapacity();
+}
+
+pub fn disposeEnv(state: *State, env: *Env) void {
     // Dispose of the memory for the map too!
     env.values.deinit(state.arena.allocator());
     state.env_pool.destroy(env);
@@ -286,8 +291,17 @@ pub fn executeBlockIn(
 }
 
 fn visitWhile(state: *State, wh: ast.Stmt.While) VoidResult {
-    while (isTruthy(try state.visitExpr(wh.condition))) {
-        try state.visitStmt(wh.body.*);
+    if (wh.body.* == .block) {
+        const body_env = try state.newEnv(state.current_env);
+        defer state.disposeEnv(body_env);
+        while (isTruthy(try state.visitExpr(wh.condition))) {
+            try state.executeBlockIn(wh.body.block, body_env);
+            state.clearEnv(body_env);
+        }
+    } else {
+        while (isTruthy(try state.visitExpr(wh.condition))) {
+            try state.visitStmt(wh.body.*);
+        }
     }
 }
 
