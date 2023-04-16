@@ -123,7 +123,7 @@ fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
         else => {
             if (std.ascii.isDigit(c)) {
                 return try scn.number(tokens);
-            } else if (std.ascii.isAlphabetic(c)) {
+            } else if (isIdentStart(c)) {
                 return try scn.identifier(tokens);
             } else {
                 scn.report("Unexpected character");
@@ -132,8 +132,16 @@ fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
     }
 }
 
+fn isIdentStart(ch: u8) bool {
+    return ch == '_' or std.ascii.isAlphabetic(ch);
+}
+
+fn isIdent(ch: u8) bool {
+    return ch == '_' or std.ascii.isAlphanumeric(ch);
+}
+
 fn identifier(scn: *Scanner, tokens: *Tokens) !void {
-    while (!scn.isAtEnd() and std.ascii.isAlphanumeric(scn.peek())) {
+    while (!scn.isAtEnd() and isIdent(scn.peek())) {
         scn.current += 1;
     }
 
