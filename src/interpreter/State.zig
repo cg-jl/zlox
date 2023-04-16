@@ -469,14 +469,15 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
     }
 
     // use underlying GPA to be able to free the list, without messing with the arena.
-    var arguments = std.ArrayList(data.Value).init(state.arena.allocator());
-    defer arguments.deinit(); // they're getting copied anyway.
+    var arguments  = try state.arena.allocator().alloc(data.Value, call.arguments.len);
+    defer state.arena.allocator().free(arguments);
 
-    for (call.arguments) |c| {
-        try arguments.append(try state.visitExpr(c));
+    for (call.arguments, arguments) |c, *a| {
+        a.* = try state.visitExpr(c);
     }
+    defer for (arguments) |*a| a.dispose(state);
 
-    return try vt.call(vt.ptr, state, arguments.items);
+    return try vt.call(vt.ptr, state, arguments);
 }
 
 fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
