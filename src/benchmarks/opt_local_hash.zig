@@ -14,7 +14,6 @@ const random = prng.random();
 // We'll use a benchmark-specific `Local` struct to not interfer with the
 // main codebase.
 const Local = packed struct {
-    tok: u6,
     col: u32,
     line: u16,
 };
@@ -24,7 +23,6 @@ const Local = packed struct {
 // avg or stddev
 fn randomLocal() Local {
     return .{
-        .tok = random.uintAtMost(u6, 39),
         // Having max u32/u16 as the top range isn't very realistic, I'll
         // have to imitate a distribution where most of them are low values,
         // and only a few of them are high values.
