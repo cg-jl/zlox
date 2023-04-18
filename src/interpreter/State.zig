@@ -508,6 +508,9 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
 fn lookupVariable(state: *State, v: Token) Result {
     const distance: Depth = state.locals.get(local(v)) orelse @panic("unresolved variable");
     const env: *Env = state.current_env.ancestor(distance.env) orelse @panic("must have env at distance");
+    // NOTE: from perf reports, this is where the most amount of cache misses
+    // occur during execution. Looks like accessing the variable 'n' still makes
+    // us miss a ton on performance.
     return env.values.items[distance.stack];
 }
 
