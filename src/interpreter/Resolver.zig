@@ -17,17 +17,22 @@ interpreter: *State,
 scopes: std.ArrayListUnmanaged(Scope) = .{},
 current_function: FuncType = FuncType.none,
 current_class: ClassType = ClassType.none,
+arena: std.heap.ArenaAllocator,
 
-pub fn init(interpreter: *State) !Resolver {
-    var res = Resolver{ .interpreter = interpreter };
+pub fn init(interpreter: *State, alloc: std.mem.Allocator) !Resolver {
+    var res = Resolver{
+        .interpreter = interpreter,
+        .arena = std.heap.ArenaAllocator.init(alloc),
+    };
+    // global scope
     try res.beginScope();
+
     try res.defineName("clock");
     return res;
 }
 
 pub fn deinit(r: *Resolver) void {
-    for (r.scopes.items) |*s| s.deinit(r.ally());
-    r.scopes.deinit(r.ally());
+    r.arena.deinit();
 }
 
 const ClassType = enum(u2) { none, class, subclass };
@@ -271,12 +276,12 @@ fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
 }
 
 fn beginScope(r: *Resolver) Result {
-    try r.scopes.append(r.interpreter.arena.allocator(), .{});
+    try r.scopes.append(r.ally(), .{});
 }
 
 fn endScope(r: *Resolver) void {
     var env = r.scopes.pop();
-    env.deinit(r.interpreter.arena.allocator());
+    env.deinit(r.ally());
 }
 
 pub fn resolveExpr(r: *Resolver, e: ast.Expr) Result {
@@ -288,5 +293,5 @@ pub fn resolveStmt(r: *Resolver, s: ast.Stmt) Result {
 }
 
 inline fn ally(r: *Resolver) std.mem.Allocator {
-    return r.interpreter.arena.allocator();
+    return r.arena.allocator();
 }

@@ -60,7 +60,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
 
     // Make sure to free resolver's memory
     {
-        var resolver = try Resolver.init(&state);
+        var resolver = try Resolver.init(&state, gpa);
         defer resolver.deinit();
         try resolver.resolveBlock(stmts.items);
     }
@@ -88,7 +88,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     var state = try Interpreter.init(gpa);
     defer state.deinit();
 
-    var resolver = try Resolver.init(&state);
+    var resolver = try Resolver.init(&state, gpa);
     defer resolver.deinit();
 
     defer builder.deinit();
