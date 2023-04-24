@@ -26,7 +26,6 @@ pub fn init(interpreter: *State, alloc: std.mem.Allocator) !Resolver {
     };
     // global scope
     try res.beginScope();
-
     try res.defineName("clock");
     return res;
 }

@@ -141,7 +141,6 @@ pub const Function = struct {
         // Move the pushed arguments to the environment
         env.values = args;
 
-
         const ret_val: Value = catchReturn: {
             st.executeBlockIn(func.decl.body, env) catch |err| {
                 if (err == error.Return) {
