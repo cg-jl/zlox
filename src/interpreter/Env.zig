@@ -5,7 +5,7 @@ const Alloc = std.mem.Allocator;
 const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
 
-enclosing: ?*Env = null,
+enclosing: ?*Env,
 values: std.ArrayListUnmanaged(data.Value) = .{},
 
 pub fn ancestor(e: *Env, distance: usize) ?*Env {
