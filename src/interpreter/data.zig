@@ -33,7 +33,7 @@ pub const Value = union(enum(u3)) {
         if (self.* == .class) {
             // we have our own env for the super thing
             if (self.class.superclass) |super| {
-                const env: ?*Env = getEnv: {
+                const env: ?State.EnvHandle = getEnv: {
                     var it = self.class.methods.valueIterator();
                     const v = it.next() orelse break :getEnv null;
                     break :getEnv v.closure;
@@ -130,16 +130,16 @@ pub const Class = struct {
 };
 pub const Function = struct {
     decl: ast.FuncDecl,
-    closure: *Env,
+    closure: State.EnvHandle,
     is_init: bool,
 
     pub fn makeCall(ptr: *const anyopaque, st: *State, args: std.ArrayListUnmanaged(Value)) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
         // Load in the new environment
-        const env: *Env = try st.newEnv(func.closure);
+        const env = try st.newEnv(func.closure);
         defer st.disposeEnv(env);
         // Move the pushed arguments to the environment
-        env.values = args;
+        st.env_pool.items[env].values = args;
 
         const ret_val: Value = catchReturn: {
             st.executeBlockIn(func.decl.body, env) catch |err| {
@@ -152,7 +152,7 @@ pub const Function = struct {
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return func.closure.values.items[0];
+        if (func.is_init) return st.env_pool.items[func.closure].values.items[0];
         return ret_val;
     }
 

@@ -11,6 +11,8 @@ const State = @This();
 const Result = data.Result;
 const VoidResult = data.AllocOrSignal!void;
 
+pub const EnvHandle = usize;
+
 const Local = packed struct {
     line: u16,
     col: u32,
@@ -50,16 +52,13 @@ const LocalMap = std.HashMapUnmanaged(
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
 
-globals: *Env,
-current_env: *Env,
+current_env: EnvHandle,
 ctx: Ctx,
 // Apparently it's an expr-to-integer map. WTF?
 // We'll solve this properly by just storing its line,
 // since there can only be one variable declaration in one line.
 locals: LocalMap,
-// TODO: we might want our own env pool, to be able to reuse memory. Not
-// measured yet.
-env_pool: std.heap.MemoryPool(Env),
+env_pool: std.ArrayListUnmanaged(Env),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
@@ -69,13 +68,13 @@ timer: std.time.Timer,
 ret_val: ?data.Value = null,
 
 pub fn init(gpa: std.mem.Allocator) !State {
-    var env_pool = std.heap.MemoryPool(Env).init(gpa);
-    errdefer env_pool.deinit();
     var arena_gpa = std.heap.ArenaAllocator.init(gpa);
     errdefer arena_gpa.deinit();
 
-    const globals: *Env = try env_pool.create();
-    globals.* = .{ .enclosing = null };
+    var env_pool = try std.ArrayListUnmanaged(Env).initCapacity(arena_gpa.allocator(), 1);
+
+    const globals: *Env = env_pool.addOneAssumeCapacity();
+    globals.* = Env{ .enclosing = null };
     try globals.values.append(
         arena_gpa.allocator(),
         .{ .callable = data.CallableVT{
@@ -87,8 +86,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
     );
 
     return State{
-        .globals = globals,
-        .current_env = globals,
+        .current_env = 0,
         .ctx = Ctx.init(gpa),
         .locals = .{},
         .env_pool = env_pool,
@@ -102,31 +100,33 @@ pub fn init(gpa: std.mem.Allocator) !State {
 }
 
 pub fn deinit(state: *State) void {
-    state.env_pool.deinit();
     state.instance_pool.deinit();
     state.class_pool.deinit();
     state.arena.deinit();
     state.ctx.deinit();
 }
 
-pub fn newEnv(state: *State, enclosing: ?*Env) AllocErr!*Env {
-    const env: *Env = try state.env_pool.create();
-    env.* = .{ .enclosing = enclosing };
-    return env;
+pub fn newEnv(state: *State, enclosing: ?EnvHandle) AllocErr!EnvHandle {
+    const env: *Env = try state.env_pool.addOne(state.arena.allocator());
+    env.* = Env{ .enclosing = enclosing };
+    return state.env_pool.items.len - 1;
 }
 
 // Clear environment, retaining old capacity.
-pub fn clearEnv(state: *State, env: *Env) void {
+pub fn clearEnv(state: *State, index: EnvHandle) void {
+    const env: *Env = &state.env_pool.items[index];
     // Only dispose of values that have no other refs. This should clean up 90%
     // of the values in the scope, if not all.
     for (env.values.items) |*v| if (v.depcount() == 0) v.dispose(state);
     env.values.clearRetainingCapacity();
 }
 
-pub fn disposeEnv(state: *State, env: *Env) void {
+pub fn disposeEnv(state: *State, index: EnvHandle) void {
+    // premise check :)
+    std.debug.assert(index == state.env_pool.items.len - 1);
+    var env = state.env_pool.pop();
     // Dispose of the memory for the map too!
     env.values.deinit(state.arena.allocator());
-    state.env_pool.destroy(env);
 }
 
 pub inline fn resolve(state: *State, at: Token, env_depth: usize, stack_depth: u32) AllocErr!void {
@@ -159,7 +159,7 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
 }
 
 pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
-    const env: *Env = try state.newEnv(state.current_env);
+    const env = try state.newEnv(state.current_env);
     state.executeBlockIn(stmts, env) catch |err| {
         switch (err) {
             error.Return => {
@@ -212,8 +212,8 @@ const stmt_vt = ast.Stmt.VisitorVTable(VoidResult, State){
 };
 
 fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
-    const class_value_idx = @intCast(u32, state.current_env.values.items.len);
-    try state.current_env.values.append(state.arena.allocator(), .{ .nil = {} });
+    const class_value_idx = @intCast(u32, state.currentEnv().values.items.len);
+    try state.currentEnv().values.append(state.arena.allocator(), .{ .nil = {} });
 
     var superclass: ?*data.Class = null;
     var class_env = state.current_env;
@@ -233,16 +233,13 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         class_env = try state.newEnv(state.current_env);
         superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
-        try class_env.values.append(state.arena.allocator(), .{ .class = superc });
+        try state.envAt(class_env).values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
     }
 
     errdefer if (stmt.superclass) |_| state.disposeEnv(class_env);
 
     var methods: std.StringHashMapUnmanaged(data.Function) = .{};
-
-    defer if (stmt.superclass) |_| if (methods.size == 0)
-        state.disposeEnv(class_env);
 
     var init_method: ?data.Function = null;
     for (stmt.methods) |m| {
@@ -266,11 +263,16 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     classp.* = class;
 
     // We know it's at zero because it was the first thing that we pushed
-    state.current_env.assignAt(0, class_value_idx, .{ .class = classp });
+    state.currentEnv().assignAt(
+        0,
+        class_value_idx,
+        .{ .class = classp },
+        state.env_pool.items,
+    );
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
-    const env: *Env = try state.newEnv(state.current_env);
+    const env = try state.newEnv(state.current_env);
     defer state.disposeEnv(env);
 
     try state.executeBlockIn(block, env);
@@ -279,7 +281,7 @@ fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
 pub fn executeBlockIn(
     state: *State,
     block: []const ast.Stmt,
-    in_env: *Env,
+    in_env: EnvHandle,
 ) VoidResult {
     const prev = state.current_env;
     defer state.current_env = prev;
@@ -311,7 +313,7 @@ fn visitVarStmt(state: *State, v: ast.Stmt.Var) VoidResult {
         value = try state.visitExpr(i);
     }
 
-    try state.current_env.values.append(state.arena.allocator(), value);
+    try state.currentEnv().values.append(state.arena.allocator(), value);
 }
 
 fn visitPrint(state: *State, p: ast.Stmt.Print) VoidResult {
@@ -337,7 +339,7 @@ fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
         .closure = state.current_env,
         .is_init = false,
     };
-    try state.current_env.values.append(state.arena.allocator(), .{ .func = function });
+    try state.currentEnv().values.append(state.arena.allocator(), .{ .func = function });
 }
 
 fn visitExprStmt(state: *State, e: ast.Expr) VoidResult {
@@ -395,13 +397,17 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     const distance = state.locals.get(local(e.keyword)) orelse unreachable;
-    const super: data.Value = state.current_env.getAt(distance.env, distance.stack);
+    const super: data.Value = state.currentEnv().getAt(distance.env, distance.stack, state.env_pool.items);
     const superclass: *const data.Class = switch (super) {
         .class => |c| c.superclass orelse unreachable,
         else => unreachable,
     };
 
-    const this: data.Value = state.current_env.getAt(distance.env - 1, 0);
+    const this: data.Value = state.currentEnv().getAt(
+        distance.env - 1,
+        0,
+        state.env_pool.items,
+    );
 
     const obj: *data.Instance = switch (this) {
         .instance => |i| i,
@@ -429,11 +435,11 @@ pub fn bind(
     f: data.Function,
     instancep: *data.Instance,
 ) AllocErr!data.Function {
-    const env: *Env = try state.newEnv(f.closure);
+    const env = try state.newEnv(f.closure);
     errdefer state.disposeEnv(env);
 
     // this sucks, because now I have to make instances pointers. Not cool!
-    try env.values.append(state.arena.allocator(), .{ .instance = instancep });
+    try state.envAt(env).values.append(state.arena.allocator(), .{ .instance = instancep });
     instancep.refcount += 1;
 
     return data.Function{
@@ -484,10 +490,11 @@ fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
     var value = try state.visitExpr(assign.value.*);
 
     const distance: Depth = state.locals.get(local(assign.name)) orelse @panic("Unresolved variable");
-    state.current_env.assignAt(
+    state.currentEnv().assignAt(
         distance.env,
         distance.stack,
         value,
+        state.env_pool.items,
     );
 
     return value;
@@ -505,9 +512,21 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
     return try state.lookupVariable(v);
 }
 
+/// Returns a pointer to the given environment.
+/// This pointer can be invalidated anywhere that a new environment is pushed,
+/// so it is advised to store the handle and call `envAt` for self-contained operations.
+/// The function call is inexpensive; it just indexes a linear array.
+pub inline fn envAt(state: *State, handle: EnvHandle) *Env {
+    return &state.env_pool.items[handle];
+}
+
+pub inline fn currentEnv(state: *State) *Env {
+    return state.envAt(state.current_env);
+}
+
 fn lookupVariable(state: *State, v: Token) Result {
     const distance: Depth = state.locals.get(local(v)) orelse @panic("unresolved variable");
-    const env: *Env = state.current_env.ancestor(distance.env) orelse @panic("must have env at distance");
+    const env: *Env = state.currentEnv().ancestor(distance.env, state.env_pool.items) orelse @panic("must have env at distance");
     // NOTE: from perf reports, this is where the most amount of cache misses
     // occur during execution. Looks like accessing the variable 'n' still makes
     // us miss a ton on performance.

@@ -4,15 +4,21 @@ const Env = @This();
 const Alloc = std.mem.Allocator;
 const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
+const State = @import("State.zig");
 
-enclosing: ?*Env,
+enclosing: ?State.EnvHandle,
 values: std.ArrayListUnmanaged(data.Value) = .{},
 
-pub fn ancestor(e: *Env, distance: usize) ?*Env {
+pub inline fn getEnclosing(e: *Env, envs: []Env) ?*Env {
+    const index = e.enclosing orelse return null;
+    return &envs[index];
+}
+
+pub fn ancestor(e: *Env, distance: usize, envs: []Env) ?*Env {
     var curr = e;
     var i: usize = 0;
     while (i < distance) : (i += 1) {
-        curr = curr.enclosing orelse return null;
+        curr = curr.getEnclosing(envs) orelse return null;
     }
     return curr;
 }
@@ -22,8 +28,9 @@ pub inline fn assignAt(
     distance: usize,
     index: u32,
     value: data.Value,
+    envs: []Env,
 ) void {
-    const env = e.ancestor(distance) orelse @panic("Must have ancestor");
+    const env = e.ancestor(distance, envs) orelse @panic("Must have ancestor");
     env.values.items[index] = value;
 }
 
@@ -31,8 +38,9 @@ pub inline fn getAt(
     e: *Env,
     distance: usize,
     index: u32,
+    envs: []Env,
 ) data.Value {
-    const env = e.ancestor(distance) orelse unreachable; // Java version would *nullptr
+    const env = e.ancestor(distance, envs) orelse unreachable; // Java version would *nullptr
     return env.values.items[index];
 }
 
@@ -41,6 +49,7 @@ pub fn assign(
     name: Token,
     value: data.Value,
     ctx: *Ctx,
+    envs: []Env,
 ) data.AllocOrSignal!void {
     var curr = e;
     while (true) {
@@ -48,7 +57,7 @@ pub fn assign(
             ent.value_ptr.* = value;
             break;
         }
-        curr = curr.enclosing orelse {
+        curr = curr.getEnclosing(envs) orelse {
             ctx.report(name, try std.fmt.allocPrint(
                 ctx.ally(),
                 "Undefined variable '{s}'",
