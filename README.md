@@ -88,10 +88,10 @@ Measuring...
 
 ```
 1.65580141e+08
-2.6028000000000002e-05
+2.151e-05
 ```
 
-Around 26 us. What I have improved does not affect here, since it's only run once.
+Around 21.5 us. What I have improved does not affect here, since it's only run once.
 
 
 ### `fib.lox` - Recursive implementation.
@@ -100,5 +100,11 @@ Around 26 us. What I have improved does not affect here, since it's only run onc
 1.65580141e+08
 4.5402189658e+01
 ```
+```
+1.65580141e+08
+4.3980456197e+01
+```
 
-About ~1m 12s~ 45s. A **37%** improvement, by avoiding creating a new environment.
+About ~45~ 43s. A 3% improvement, by storing the values directly on a single
+array. This didn't go as I expected, maybe I've introduced some overhead
+elsewhere.
