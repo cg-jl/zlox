@@ -58,6 +58,7 @@ ctx: Ctx,
 // since there can only be one variable declaration in one line.
 locals: LocalMap,
 env_pool: std.ArrayListUnmanaged(Env),
+values: std.ArrayListUnmanaged(data.Value),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
@@ -71,11 +72,14 @@ pub fn init(gpa: std.mem.Allocator) !State {
     errdefer arena_gpa.deinit();
 
     var env_pool = try std.ArrayListUnmanaged(Env).initCapacity(arena_gpa.allocator(), 1);
+    var values = try std.ArrayListUnmanaged(data.Value).initCapacity(
+        arena_gpa.allocator(),
+        1,
+    );
 
     const globals: *Env = env_pool.addOneAssumeCapacity();
-    globals.* = Env{ .enclosing = null };
-    try globals.values.append(
-        arena_gpa.allocator(),
+    globals.* = Env{ .enclosing = null, .values_begin = 0 };
+    values.appendAssumeCapacity(
         .{ .callable = data.CallableVT{
             .ptr = undefined,
             .repr = "<native fn clock()>",
@@ -88,6 +92,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
         .ctx = Ctx.init(gpa),
         .locals = .{},
         .env_pool = env_pool,
+        .values = values,
         .instance_pool = std.heap.MemoryPool(data.Instance).init(gpa),
         .class_pool = std.heap.MemoryPool(data.Class).init(gpa),
         .arena = arena_gpa,
@@ -106,23 +111,24 @@ pub fn deinit(state: *State) void {
 
 pub fn pushEnv(state: *State, enclosing: ?EnvHandle) AllocErr!EnvHandle {
     const env: *Env = try state.env_pool.addOne(state.arena.allocator());
-    env.* = Env{ .enclosing = enclosing };
+    env.* = Env{ .enclosing = enclosing, .values_begin = state.values.items.len };
     return state.env_pool.items.len - 1;
 }
 
-// Clear environment, retaining old capacity.
-pub fn clearEnv(state: *State, index: EnvHandle) void {
-    const env: *Env = &state.env_pool.items[index];
-    // Only dispose of values that have no other refs. This should clean up 90%
-    // of the values in the scope, if not all.
-    for (env.values.items) |*v| if (v.depcount() == 0) v.dispose(state);
-    env.values.clearRetainingCapacity();
+fn disposeValues(state: *State, vs: []data.Value) void {
+    for (vs) |*v| {
+        if (v.depcount() == 0) v.dispose(state);
+    }
 }
 
 pub fn popEnv(state: *State) void {
-    var env = state.env_pool.pop();
+    var env: Env = state.env_pool.pop();
     // Dispose of the memory for the map too!
-    env.values.deinit(state.arena.allocator());
+    for (state.indexFromEnvp(&env)) |*v| {
+        if (v.depcount() == 0)
+            v.dispose(state);
+    }
+    state.values.items.len = env.values_begin;
 }
 
 pub inline fn resolve(state: *State, at: Token, env_depth: usize, stack_depth: u32) AllocErr!void {
@@ -177,7 +183,7 @@ pub fn stringify(state: *State, obj: data.Value) ![]const u8 {
     return try std.fmt.allocPrint(state.ctx.ally(), "{}", .{obj.*});
 }
 
-fn getClock(_: *const anyopaque, state: *State, _: std.ArrayListUnmanaged(data.Value)) Result {
+fn getClock(_: *const anyopaque, state: *State, _: []const ast.Expr) Result {
     const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
     const value = @intToFloat(f64, state.timer.read());
     return .{ .num = value / conversion };
@@ -209,8 +215,7 @@ const stmt_vt = ast.Stmt.VisitorVTable(VoidResult, State){
 };
 
 fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
-    const class_value_idx = @intCast(u32, state.currentEnv().values.items.len);
-    try state.currentEnv().values.append(state.arena.allocator(), .{ .nil = {} });
+    const class_value_ptr = try state.values.addOne(state.arena.allocator());
 
     var superclass: ?*data.Class = null;
     var class_env = state.currentEnvHandle();
@@ -230,7 +235,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         class_env = try state.pushEnv(state.currentEnvHandle());
         superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
-        try state.envAt(class_env).values.append(state.arena.allocator(), .{ .class = superc });
+        try state.values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
     }
 
@@ -259,13 +264,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     const classp = try state.class_pool.create();
     classp.* = class;
 
-    // We know it's at zero because it was the first thing that we pushed
-    state.currentEnv().assignAt(
-        0,
-        class_value_idx,
-        .{ .class = classp },
-        state.env_pool.items,
-    );
+    class_value_ptr.* = .{ .class = classp };
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
@@ -297,7 +296,7 @@ fn visitVarStmt(state: *State, v: ast.Stmt.Var) VoidResult {
         value = try state.visitExpr(i);
     }
 
-    try state.currentEnv().values.append(state.arena.allocator(), value);
+    try state.values.append(state.arena.allocator(), value);
 }
 
 fn visitPrint(state: *State, p: ast.Stmt.Print) VoidResult {
@@ -323,7 +322,7 @@ fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
         .closure = state.currentEnvHandle(),
         .is_init = false,
     };
-    try state.currentEnv().values.append(state.arena.allocator(), .{ .func = function });
+    try state.values.append(state.arena.allocator(), .{ .func = function });
 }
 
 fn visitExprStmt(state: *State, e: ast.Expr) VoidResult {
@@ -381,17 +380,22 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     const distance = state.locals.get(local(e.keyword)) orelse unreachable;
-    const super: data.Value = state.currentEnv().getAt(distance.env, distance.stack, state.env_pool.items);
+    const super: data.Value = getSuper: {
+        const ancestor = state.currentEnv().ancestor(distance.env, state.env_pool.items).?;
+        break :getSuper state.values.items[ancestor.values_begin..][distance.stack];
+    };
     const superclass: *const data.Class = switch (super) {
         .class => |c| c.superclass orelse unreachable,
         else => unreachable,
     };
 
-    const this: data.Value = state.currentEnv().getAt(
-        distance.env - 1,
-        0,
-        state.env_pool.items,
-    );
+    const this: data.Value = getThis: {
+        const at = state.currentEnv().ancestor(
+            distance.env - 1,
+            state.env_pool.items,
+        ).?;
+        break :getThis state.values.items[at.values_begin..][0];
+    };
 
     const obj: *data.Instance = switch (this) {
         .instance => |i| i,
@@ -423,7 +427,7 @@ pub fn bind(
     errdefer state.popEnv();
 
     // this sucks, because now I have to make instances pointers. Not cool!
-    try state.envAt(env).values.append(state.arena.allocator(), .{ .instance = instancep });
+    try state.values.append(state.arena.allocator(), .{ .instance = instancep });
     instancep.refcount += 1;
 
     return data.Function{
@@ -458,28 +462,15 @@ fn visitCall(state: *State, call: ast.Expr.Call) Result {
         return error.RuntimeError;
     }
 
-    // We create the arguments array with preallocated capacity, then move it into the callee so that they
-    // can instantly use it as the environment
-    var arguments = try std.ArrayListUnmanaged(data.Value).initCapacity(state.arena.allocator(), call.arguments.len);
-    arguments.items.len = call.arguments.len;
-
-    for (call.arguments, arguments.items) |c, *a| {
-        a.* = try state.visitExpr(c);
-    }
-
-    return try vt.call(vt.ptr, state, arguments);
+    return try vt.call(vt.ptr, state, call.arguments);
 }
 
 fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
     var value = try state.visitExpr(assign.value.*);
 
     const distance: Depth = state.locals.get(local(assign.name)) orelse @panic("Unresolved variable");
-    state.currentEnv().assignAt(
-        distance.env,
-        distance.stack,
-        value,
-        state.env_pool.items,
-    );
+    const ancestor = state.currentEnv().ancestor(distance.env, state.env_pool.items).?;
+    state.indexFromEnvp(ancestor)[distance.stack] = value;
 
     return value;
 }
@@ -518,7 +509,7 @@ fn lookupVariable(state: *State, v: Token) Result {
     // NOTE: from perf reports, this is where the most amount of cache misses
     // occur during execution. Looks like accessing the variable 'n' still makes
     // us miss a ton on performance.
-    return env.values.items[distance.stack];
+    return state.indexFromEnvp(env)[distance.stack];
 }
 
 fn visitUnary(state: *State, u: ast.Expr.Unary) Result {
@@ -639,10 +630,17 @@ fn checkNumberOperands(
     return error.RuntimeError;
 }
 
-inline fn visitExpr(state: *State, e: ast.Expr) Result {
+pub inline fn visitExpr(state: *State, e: ast.Expr) Result {
     return try e.accept(Result, State, expr_vt, state);
 }
 
 inline fn visitStmt(state: *State, e: ast.Stmt) VoidResult {
     return try e.accept(VoidResult, State, stmt_vt, state);
+}
+
+pub inline fn indexFromEnv(state: *State, env: EnvHandle) []data.Value {
+    return state.indexFromEnvp(state.envAt(env));
+}
+pub inline fn indexFromEnvp(state: *State, env: *Env) []data.Value {
+    return state.values.items[env.values_begin..];
 }

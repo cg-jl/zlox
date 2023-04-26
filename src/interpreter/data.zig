@@ -98,7 +98,7 @@ pub const Class = struct {
     superclass: ?*Class,
     refcount: usize = 0,
     instance_count: usize = 0,
-    fn call(p: *const anyopaque, i: *State, args: std.ArrayListUnmanaged(Value)) Result {
+    fn call(p: *const anyopaque, i: *State, args: []const ast.Expr) Result {
         const class = @ptrCast(*const Class, @alignCast(@alignOf(Class), p));
         const instance: *Instance = try i.instance_pool.create();
         errdefer i.instance_pool.destroy(instance);
@@ -133,13 +133,16 @@ pub const Function = struct {
     closure: State.EnvHandle,
     is_init: bool,
 
-    pub fn makeCall(ptr: *const anyopaque, st: *State, args: std.ArrayListUnmanaged(Value)) Result {
+    pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const ast.Expr) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
-        // Load in the new environment
+
+        try st.values.ensureUnusedCapacity(st.arena.allocator(), args.len);
+        for (args) |a| {
+            st.values.appendAssumeCapacity(try st.visitExpr(a));
+        }
         const env = try st.pushEnv(func.closure);
         defer st.popEnv();
-        // Move the pushed arguments to the environment
-        st.env_pool.items[env].values = args;
+        st.envAt(env).values_begin -= args.len;
 
         const ret_val: Value = catchReturn: {
             st.executeBlock(func.decl.body) catch |err| {
@@ -152,7 +155,7 @@ pub const Function = struct {
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return st.env_pool.items[func.closure].values.items[0];
+        if (func.is_init) return st.indexFromEnv(func.closure)[0];
         return ret_val;
     }
 
@@ -173,7 +176,7 @@ pub const CallableVT = struct {
     ptr: *const anyopaque,
     arity: u8, // cannot be > 255
     repr: []const u8,
-    call: *const fn (*const anyopaque, *State, std.ArrayListUnmanaged(Value)) Result,
+    call: *const fn (*const anyopaque, *State, []const ast.Expr) Result,
 };
 
 pub const Signal = error{ RuntimeError, Return };
