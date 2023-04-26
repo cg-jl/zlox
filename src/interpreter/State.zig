@@ -52,7 +52,6 @@ const LocalMap = std.HashMapUnmanaged(
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
 
-current_env: EnvHandle,
 ctx: Ctx,
 // Apparently it's an expr-to-integer map. WTF?
 // We'll solve this properly by just storing its line,
@@ -86,7 +85,6 @@ pub fn init(gpa: std.mem.Allocator) !State {
     );
 
     return State{
-        .current_env = 0,
         .ctx = Ctx.init(gpa),
         .locals = .{},
         .env_pool = env_pool,
@@ -106,7 +104,7 @@ pub fn deinit(state: *State) void {
     state.ctx.deinit();
 }
 
-pub fn newEnv(state: *State, enclosing: ?EnvHandle) AllocErr!EnvHandle {
+pub fn pushEnv(state: *State, enclosing: ?EnvHandle) AllocErr!EnvHandle {
     const env: *Env = try state.env_pool.addOne(state.arena.allocator());
     env.* = Env{ .enclosing = enclosing };
     return state.env_pool.items.len - 1;
@@ -121,9 +119,7 @@ pub fn clearEnv(state: *State, index: EnvHandle) void {
     env.values.clearRetainingCapacity();
 }
 
-pub fn disposeEnv(state: *State, index: EnvHandle) void {
-    // premise check :)
-    std.debug.assert(index == state.env_pool.items.len - 1);
+pub fn popEnv(state: *State) void {
     var env = state.env_pool.pop();
     // Dispose of the memory for the map too!
     env.values.deinit(state.arena.allocator());
@@ -159,8 +155,9 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
 }
 
 pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
-    const env = try state.newEnv(state.current_env);
-    state.executeBlockIn(stmts, env) catch |err| {
+    _ = try state.pushEnv(state.currentEnvHandle());
+    defer state.popEnv();
+    state.executeBlock(stmts) catch |err| {
         switch (err) {
             error.Return => {
                 std.log.err("Caught return in global context", .{});
@@ -216,7 +213,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     try state.currentEnv().values.append(state.arena.allocator(), .{ .nil = {} });
 
     var superclass: ?*data.Class = null;
-    var class_env = state.current_env;
+    var class_env = state.currentEnvHandle();
     if (stmt.superclass) |sp| {
         const super = try state.lookupVariable(sp);
         const superc: *data.Class = switch (super) {
@@ -230,14 +227,14 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         // we can only have one level of inheritance.
         // So we can have the class have a refcount
 
-        class_env = try state.newEnv(state.current_env);
+        class_env = try state.pushEnv(state.currentEnvHandle());
         superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
         try state.envAt(class_env).values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
     }
 
-    errdefer if (stmt.superclass) |_| state.disposeEnv(class_env);
+    errdefer if (stmt.superclass) |_| state.popEnv();
 
     var methods: std.StringHashMapUnmanaged(data.Function) = .{};
 
@@ -272,38 +269,25 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
-    const env = try state.newEnv(state.current_env);
-    defer state.disposeEnv(env);
+    _ = try state.pushEnv(state.currentEnvHandle());
+    defer state.popEnv();
 
-    try state.executeBlockIn(block, env);
+    try state.executeBlock(block);
 }
 
-pub fn executeBlockIn(
+/// Execute a block without pushing an environment.
+pub fn executeBlock(
     state: *State,
     block: []const ast.Stmt,
-    in_env: EnvHandle,
 ) VoidResult {
-    const prev = state.current_env;
-    defer state.current_env = prev;
-    state.current_env = in_env;
-
     for (block) |s| {
         try state.visitStmt(s);
     }
 }
 
 fn visitWhile(state: *State, wh: ast.Stmt.While) VoidResult {
-    if (wh.body.* == .block) {
-        const body_env = try state.newEnv(state.current_env);
-        defer state.disposeEnv(body_env);
-        while (isTruthy(try state.visitExpr(wh.condition))) {
-            try state.executeBlockIn(wh.body.block, body_env);
-            state.clearEnv(body_env);
-        }
-    } else {
-        while (isTruthy(try state.visitExpr(wh.condition))) {
-            try state.visitStmt(wh.body.*);
-        }
+    while (isTruthy(try state.visitExpr(wh.condition))) {
+        try state.visitStmt(wh.body.*);
     }
 }
 
@@ -336,7 +320,7 @@ fn visitIf(state: *State, iff: ast.Stmt.If) VoidResult {
 fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
     const function = data.Function{
         .decl = e.decl,
-        .closure = state.current_env,
+        .closure = state.currentEnvHandle(),
         .is_init = false,
     };
     try state.currentEnv().values.append(state.arena.allocator(), .{ .func = function });
@@ -426,8 +410,8 @@ fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     return .{ .func = try state.bind(method, obj) };
 }
 
-pub fn unbind(state: *State, f: data.Function) void {
-    state.disposeEnv(f.closure);
+pub fn unbind(state: *State, _: data.Function) void {
+    state.popEnv();
 }
 
 pub fn bind(
@@ -435,8 +419,8 @@ pub fn bind(
     f: data.Function,
     instancep: *data.Instance,
 ) AllocErr!data.Function {
-    const env = try state.newEnv(f.closure);
-    errdefer state.disposeEnv(env);
+    const env = try state.pushEnv(f.closure);
+    errdefer state.popEnv();
 
     // this sucks, because now I have to make instances pointers. Not cool!
     try state.envAt(env).values.append(state.arena.allocator(), .{ .instance = instancep });
@@ -503,7 +487,7 @@ fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
 fn visitLambda(state: *State, lam: ast.Expr.Lambda) Result {
     return .{ .func = data.Function{
         .decl = lam.decl,
-        .closure = state.current_env,
+        .closure = state.currentEnvHandle(),
         .is_init = false,
     } };
 }
@@ -521,7 +505,11 @@ pub inline fn envAt(state: *State, handle: EnvHandle) *Env {
 }
 
 pub inline fn currentEnv(state: *State) *Env {
-    return state.envAt(state.current_env);
+    return state.envAt(state.currentEnvHandle());
+}
+
+pub inline fn currentEnvHandle(state: *const State) EnvHandle {
+    return state.env_pool.items.len - 1;
 }
 
 fn lookupVariable(state: *State, v: Token) Result {

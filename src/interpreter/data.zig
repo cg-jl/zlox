@@ -38,8 +38,8 @@ pub const Value = union(enum(u3)) {
                     const v = it.next() orelse break :getEnv null;
                     break :getEnv v.closure;
                 };
-                if (env) |e| {
-                    state.disposeEnv(e);
+                if (env) |_| {
+                    state.popEnv();
                 }
                 super.refcount -= 1;
             }
@@ -136,13 +136,13 @@ pub const Function = struct {
     pub fn makeCall(ptr: *const anyopaque, st: *State, args: std.ArrayListUnmanaged(Value)) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
         // Load in the new environment
-        const env = try st.newEnv(func.closure);
-        defer st.disposeEnv(env);
+        const env = try st.pushEnv(func.closure);
+        defer st.popEnv();
         // Move the pushed arguments to the environment
         st.env_pool.items[env].values = args;
 
         const ret_val: Value = catchReturn: {
-            st.executeBlockIn(func.decl.body, env) catch |err| {
+            st.executeBlock(func.decl.body) catch |err| {
                 if (err == error.Return) {
                     const ret = st.ret_val orelse Value.nil();
                     st.ret_val = null;
