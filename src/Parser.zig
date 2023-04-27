@@ -412,7 +412,7 @@ fn primary(p: *Parser) AllocOrSignal!ast.Expr {
         .LEFT_PAREN => {
             const inner = try p.expression();
             _ = try p.consume(.RIGHT_PAREN, "Expected ')' after expression");
-            return ast.Expr.grouping(try p.builder.expandLifetime(inner));
+            return inner;
         },
         else => try p.report(p.prev(), "Expected expression"),
     }

@@ -15,7 +15,6 @@ pub const Printer = @import("ast/Printer.zig");
 
 pub const Expr = union(enum(u4)) {
     binary: Binary,
-    grouping: *const Expr, // this is not really needed, but I don't know where
     // the book wants to go with the AST.
     literal: Literal,
     unary: Unary,
@@ -30,46 +29,7 @@ pub const Expr = union(enum(u4)) {
 
     pub const Literal = Token.TaggedLiteral;
 
-    // count == 12 => u4
-
-    pub fn VisitorVTable(comptime R: type, comptime Itor: type) type {
-        return struct {
-            visitBinary: fn (*Itor, Binary) R,
-            visitLiteral: fn (*Itor, Literal) R,
-            visitUnary: fn (*Itor, Unary) R,
-            visitVar: fn (*Itor, Token) R,
-            visitLambda: fn (*Itor, Lambda) R,
-            visitAssign: fn (*Itor, Assign) R,
-            visitCall: fn (*Itor, Call) R,
-            visitThis: fn (*Itor, Token) R,
-            visitSuper: fn (*Itor, Super) R,
-            visitGet: fn (*Itor, Get) R,
-            visitSet: fn (*Itor, Set) R,
-        };
-    }
-
-    pub fn accept(
-        self: Expr,
-        comptime R: type,
-        comptime Itor: type,
-        comptime vt: VisitorVTable(R, Itor),
-        v: *Itor,
-    ) R {
-        return switch (self) {
-            .binary => |bin| vt.visitBinary(v, bin),
-            .grouping => |g| g.accept(R, Itor, vt, v),
-            .literal => |l| vt.visitLiteral(v, l),
-            .unary => |u| vt.visitUnary(v, u),
-            .@"var" => |t| vt.visitVar(v, t),
-            .lambda => |l| vt.visitLambda(v, l),
-            .assign => |a| vt.visitAssign(v, a),
-            .call => |c| vt.visitCall(v, c),
-            .this => |t| vt.visitThis(v, t),
-            .super => |s| vt.visitSuper(v, s),
-            .get => |g| vt.visitGet(v, g),
-            .set => |s| vt.visitSet(v, s),
-        };
-    }
+    // count == 11 => u4
 
     pub fn @"var"(name: Token) Expr {
         return .{ .@"var" = name };
@@ -201,39 +161,6 @@ pub const Stmt = union(enum(u4)) {
     block: []const Stmt,
     class: Class,
 
-    pub fn VisitorVTable(comptime R: type, comptime I: type) type {
-        return struct {
-            visitExpr: fn (*I, Expr) R,
-            visitFunction: fn (*I, Function) R,
-            visitIf: fn (*I, If) R,
-            visitReturn: fn (*I, Return) R,
-            visitPrint: fn (*I, Expr) R,
-            visitVar: fn (*I, Var) R,
-            visitWhile: fn (*I, While) R,
-            visitBlock: fn (*I, []const Stmt) R,
-            visitClass: fn (*I, Class) R,
-        };
-    }
-
-    pub fn accept(
-        self: Stmt,
-        comptime R: type,
-        comptime I: type,
-        comptime vt: VisitorVTable(R, I),
-        v: *I,
-    ) R {
-        return switch (self) {
-            .expr => |e| vt.visitExpr(v, e),
-            .function => |f| vt.visitFunction(v, f),
-            .@"if" => |i| vt.visitIf(v, i),
-            .@"return" => |r| vt.visitReturn(v, r),
-            .print => |p| vt.visitPrint(v, p),
-            .@"var" => |va| vt.visitVar(v, va),
-            .@"while" => |wh| vt.visitWhile(v, wh),
-            .block => |bl| vt.visitBlock(v, bl),
-            .class => |cl| vt.visitClass(v, cl),
-        };
-    }
     // count == 9 => u4
 
     pub const Class = struct {

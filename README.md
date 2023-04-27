@@ -98,13 +98,12 @@ Around 34 us. It seems that I have regressed, but I now have a
 
 ```
 1.65580141e+08
-4.3980456197e+01
+4.1694128384e+01
 ```
 ```
 1.65580141e+08
-4.1694128384e+01
+3.650257832e+01
 ```
 
-About ~43~ 41s. A 5% improvement, by storing the environments on the stack
-where appropiate. This isn't going as I expected, so I'll have to revise perf
-reports.
+About ~41~ 36s. A 12% improvement, by removing the redundant grouping case and
+inlining the visiting switch.

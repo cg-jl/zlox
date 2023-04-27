@@ -283,12 +283,34 @@ fn endScope(r: *Resolver) void {
     env.deinit(r.ally());
 }
 
-pub fn resolveExpr(r: *Resolver, e: ast.Expr) Result {
-    try e.accept(Result, Resolver, expr_vt, r);
+pub inline fn resolveExpr(r: *Resolver, e: ast.Expr) Result {
+    switch (e) {
+        .binary => |b| try r.resolveBinary(b),
+        .literal => |_| {},
+        .unary => |u| try r.resolveUnary(u),
+        .@"var" => |v| try r.resolveVar(v),
+        .lambda => |l| try r.resolveLambda(l),
+        .assign => |a| try r.resolveAssign(a),
+        .call => |c| try r.resolveCall(c),
+        .this => |t| try r.resolveThis(t),
+        .super => |s| try r.resolveSuper(s),
+        .get => |g| try r.resolveGet(g),
+        .set => |s| try r.resolveSet(s),
+    }
 }
 
-pub fn resolveStmt(r: *Resolver, s: ast.Stmt) Result {
-    try s.accept(Result, Resolver, stmt_vt, r);
+pub inline fn resolveStmt(r: *Resolver, s: ast.Stmt) Result {
+    switch (s) {
+        .expr => |e| try r.resolveExpr(e),
+        .function => |f| try r.resolveFunction(f),
+        .@"if" => |i| try r.resolveIf(i),
+        .@"return" => |ret| try r.resolveReturn(ret),
+        .print => |p| try r.resolvePrint(p),
+        .@"var" => |v| try r.resolveVarSt(v),
+        .@"while" => |w| try r.resolveWhile(w),
+        .block => |b| try r.resolveBlock(b),
+        .class => |c| try r.resolveClass(c),
+    }
 }
 
 inline fn ally(r: *Resolver) std.mem.Allocator {

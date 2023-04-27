@@ -189,31 +189,6 @@ fn getClock(_: *const anyopaque, state: *State, _: []const ast.Expr) Result {
     return .{ .num = value / conversion };
 }
 
-const expr_vt = ast.Expr.VisitorVTable(Result, State){
-    .visitBinary = visitBinary,
-    .visitLiteral = visitLiteral,
-    .visitUnary = visitUnary,
-    .visitVar = visitVar,
-    .visitLambda = visitLambda,
-    .visitAssign = visitAssign,
-    .visitCall = visitCall,
-    .visitThis = visitThis,
-    .visitSuper = visitSuper,
-    .visitGet = visitGet,
-    .visitSet = visitSet,
-};
-const stmt_vt = ast.Stmt.VisitorVTable(VoidResult, State){
-    .visitExpr = visitExprStmt, // we have to convert to void
-    .visitFunction = visitFunction,
-    .visitIf = visitIf,
-    .visitReturn = visitReturn,
-    .visitPrint = visitPrint,
-    .visitVar = visitVarStmt,
-    .visitWhile = visitWhile,
-    .visitBlock = visitBlock,
-    .visitClass = visitClass,
-};
-
 fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     const class_value_ptr = try state.values.addOne(state.arena.allocator());
 
@@ -313,7 +288,7 @@ fn visitPrint(state: *State, p: ast.Stmt.Print) VoidResult {
     std.debug.print("{s}\n", .{value});
 }
 
-fn visitReturn(state: *State, ret: ast.Stmt.Return) VoidResult {
+inline fn visitReturn(state: *State, ret: ast.Stmt.Return) VoidResult {
     const value = try state.visitExpr(ret.value);
     state.ret_val = value;
     return error.Return;
@@ -629,11 +604,36 @@ fn checkNumberOperands(
 }
 
 pub inline fn visitExpr(state: *State, e: ast.Expr) Result {
-    return try e.accept(Result, State, expr_vt, state);
+    return try switch (e) {
+        .binary => |b| state.visitBinary(b),
+        .literal => |l| state.visitLiteral(l),
+        .unary => |u| state.visitUnary(u),
+        .@"var" => |v| state.visitVar(v),
+        .lambda => |l| state.visitLambda(l),
+        .assign => |a| state.visitAssign(a),
+        .call => |c| state.visitCall(c),
+        .this => |t| state.visitThis(t),
+        .super => |s| state.visitSuper(s),
+        .get => |g| state.visitGet(g),
+        .set => |s| state.visitSet(s),
+    };
 }
 
-inline fn visitStmt(state: *State, e: ast.Stmt) VoidResult {
-    return try e.accept(VoidResult, State, stmt_vt, state);
+inline fn visitStmt(state: *State, stmt: ast.Stmt) VoidResult {
+    switch (stmt) {
+        .expr => |e| {
+            var v = try state.visitExpr(e);
+            v.dispose(state);
+        },
+        .function => |f| try state.visitFunction(f),
+        .@"if" => |i| try state.visitIf(i),
+        .@"return" => |r| try state.visitReturn(r),
+        .print => |p| try state.visitPrint(p),
+        .@"var" => |v| try state.visitVarStmt(v),
+        .@"while" => |w| try state.visitWhile(w),
+        .block => |b| try state.visitBlock(b),
+        .class => |c| try state.visitClass(c),
+    }
 }
 
 pub inline fn indexFromEnv(state: *State, env: EnvHandle) []data.Value {
