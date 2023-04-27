@@ -33,13 +33,13 @@ pub const Value = union(enum(u3)) {
         if (self.* == .class) {
             // we have our own env for the super thing
             if (self.class.superclass) |super| {
-                const env: ?State.EnvHandle = getEnv: {
+                const env: ?*const Env = getEnv: {
                     var it = self.class.methods.valueIterator();
                     const v = it.next() orelse break :getEnv null;
                     break :getEnv v.closure;
                 };
-                if (env) |_| {
-                    state.popEnv();
+                if (env) |e| {
+                    state.restoreFrame(e.*);
                 }
                 super.refcount -= 1;
             }
@@ -130,19 +130,28 @@ pub const Class = struct {
 };
 pub const Function = struct {
     decl: ast.FuncDecl,
-    closure: State.EnvHandle,
+    closure: *Env,
     is_init: bool,
 
     pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const ast.Expr) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
 
+
         try st.values.ensureUnusedCapacity(st.arena.allocator(), args.len);
         for (args) |a| {
             st.values.appendAssumeCapacity(try st.visitExpr(a));
         }
-        const env = try st.pushEnv(func.closure);
-        defer st.popEnv();
-        st.envAt(env).values_begin -= args.len;
+
+        var frame: Env = undefined;
+        st.pushFrame(&frame);
+        defer st.restoreFrame(frame);
+
+        // Make sure that the ancestor calls point to the correct environment.
+        st.current_env.enclosing = func.closure;
+        // Make sure that the arguments are popped too.
+        // We don't create the frame before the arguments are evaluated
+        // because then we introduce a new scope where it shouldn't be.
+        st.current_env.values_begin -= args.len;
 
         const ret_val: Value = catchReturn: {
             st.executeBlock(func.decl.body) catch |err| {
@@ -155,7 +164,7 @@ pub const Function = struct {
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return st.indexFromEnv(func.closure)[0];
+        if (func.is_init) return st.values.items[func.closure.values_begin..][0];
         return ret_val;
     }
 

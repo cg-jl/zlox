@@ -7,18 +7,14 @@ const Token = @import("../Token.zig");
 const State = @import("State.zig");
 
 values_begin: usize,
-enclosing: ?State.EnvHandle,
+enclosing: ?*const Env,
 
-pub inline fn getEnclosing(e: *Env, envs: []Env) ?*Env {
-    const index = e.enclosing orelse return null;
-    return &envs[index];
-}
 
-pub fn ancestor(e: *Env, distance: usize, envs: []Env) ?*Env {
+pub fn ancestor(e: *const Env, distance: usize) *const Env {
     var curr = e;
     var i: usize = 0;
     while (i < distance) : (i += 1) {
-        curr = curr.getEnclosing(envs) orelse return null;
+        curr = curr.enclosing.?;
     }
     return curr;
 }

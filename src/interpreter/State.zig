@@ -57,11 +57,12 @@ ctx: Ctx,
 // We'll solve this properly by just storing its line,
 // since there can only be one variable declaration in one line.
 locals: LocalMap,
-env_pool: std.ArrayListUnmanaged(Env),
+current_env: Env,
 values: std.ArrayListUnmanaged(data.Value),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
+env_pool: std.heap.MemoryPool(Env),
 class_pool: std.heap.MemoryPool(data.Class),
 arena: std.heap.ArenaAllocator,
 timer: std.time.Timer,
@@ -71,14 +72,12 @@ pub fn init(gpa: std.mem.Allocator) !State {
     var arena_gpa = std.heap.ArenaAllocator.init(gpa);
     errdefer arena_gpa.deinit();
 
-    var env_pool = try std.ArrayListUnmanaged(Env).initCapacity(arena_gpa.allocator(), 1);
     var values = try std.ArrayListUnmanaged(data.Value).initCapacity(
         arena_gpa.allocator(),
         1,
     );
 
-    const globals: *Env = env_pool.addOneAssumeCapacity();
-    globals.* = Env{ .enclosing = null, .values_begin = 0 };
+    const globals = Env{ .enclosing = undefined, .values_begin = 0 };
     values.appendAssumeCapacity(
         .{ .callable = data.CallableVT{
             .ptr = undefined,
@@ -90,8 +89,9 @@ pub fn init(gpa: std.mem.Allocator) !State {
 
     return State{
         .ctx = Ctx.init(gpa),
+        .current_env = globals,
         .locals = .{},
-        .env_pool = env_pool,
+        .env_pool = std.heap.MemoryPool(Env).init(gpa),
         .values = values,
         .instance_pool = std.heap.MemoryPool(data.Instance).init(gpa),
         .class_pool = std.heap.MemoryPool(data.Class).init(gpa),
@@ -103,16 +103,19 @@ pub fn init(gpa: std.mem.Allocator) !State {
 }
 
 pub fn deinit(state: *State) void {
-    state.instance_pool.deinit();
+    state.env_pool.deinit();
     state.class_pool.deinit();
+    state.instance_pool.deinit();
     state.arena.deinit();
     state.ctx.deinit();
 }
 
-pub fn pushEnv(state: *State, enclosing: ?EnvHandle) AllocErr!EnvHandle {
-    const env: *Env = try state.env_pool.addOne(state.arena.allocator());
-    env.* = Env{ .enclosing = enclosing, .values_begin = state.values.items.len };
-    return state.env_pool.items.len - 1;
+pub fn pushFrame(state: *State, frame: *Env) void {
+    frame.* = state.current_env;
+    state.current_env = .{
+        .enclosing = frame,
+        .values_begin = state.values.items.len,
+    };
 }
 
 fn disposeValues(state: *State, vs: []data.Value) void {
@@ -121,14 +124,10 @@ fn disposeValues(state: *State, vs: []data.Value) void {
     }
 }
 
-pub fn popEnv(state: *State) void {
-    var env: Env = state.env_pool.pop();
-    // Dispose of the memory for the map too!
-    for (state.indexFromEnvp(&env)) |*v| {
-        if (v.depcount() == 0)
-            v.dispose(state);
-    }
-    state.values.items.len = env.values_begin;
+pub fn restoreFrame(state: *State, frame: Env) void {
+    state.disposeValues(state.values.items[state.current_env.values_begin..]);
+    state.values.items.len = state.current_env.values_begin;
+    state.current_env = frame;
 }
 
 pub inline fn resolve(state: *State, at: Token, env_depth: usize, stack_depth: u32) AllocErr!void {
@@ -161,8 +160,9 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
 }
 
 pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
-    _ = try state.pushEnv(state.currentEnvHandle());
-    defer state.popEnv();
+    var frame: Env = undefined;
+    state.pushFrame(&frame);
+    defer state.restoreFrame(frame);
     state.executeBlock(stmts) catch |err| {
         switch (err) {
             error.Return => {
@@ -218,8 +218,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     const class_value_ptr = try state.values.addOne(state.arena.allocator());
 
     var superclass: ?*data.Class = null;
-    var class_env = state.currentEnvHandle();
-    if (stmt.superclass) |sp| {
+    const class_env = if (stmt.superclass) |sp| hasSuper: {
         const super = try state.lookupVariable(sp);
         const superc: *data.Class = switch (super) {
             .class => |c| c,
@@ -232,14 +231,23 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         // we can only have one level of inheritance.
         // So we can have the class have a refcount
 
-        class_env = try state.pushEnv(state.currentEnvHandle());
+        const class_env = try state.env_pool.create();
+        state.pushFrame(class_env);
         superc.refcount += 1;
         // It's ok to make a copy of the class info since they're immutable.
         try state.values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
-    }
+        break :hasSuper class_env;
+    } else cloneCurrent: {
+        const clone = try state.env_pool.create();
+        clone.* = state.current_env;
+        break :cloneCurrent clone;
+    };
 
-    errdefer if (stmt.superclass) |_| state.popEnv();
+    errdefer {
+        if (stmt.superclass) |_| state.restoreFrame(class_env.*);
+        state.env_pool.destroy(class_env);
+    }
 
     var methods: std.StringHashMapUnmanaged(data.Function) = .{};
 
@@ -268,8 +276,9 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
-    _ = try state.pushEnv(state.currentEnvHandle());
-    defer state.popEnv();
+    var frame: Env = undefined;
+    state.pushFrame(&frame);
+    defer state.restoreFrame(frame);
 
     try state.executeBlock(block);
 }
@@ -317,9 +326,11 @@ fn visitIf(state: *State, iff: ast.Stmt.If) VoidResult {
 }
 
 fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
+    const clone: *Env = try state.env_pool.create();
+    clone.* = state.current_env;
     const function = data.Function{
         .decl = e.decl,
-        .closure = state.currentEnvHandle(),
+        .closure = clone,
         .is_init = false,
     };
     try state.values.append(state.arena.allocator(), .{ .func = function });
@@ -381,7 +392,7 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     const distance = state.locals.get(local(e.keyword)) orelse unreachable;
     const super: data.Value = getSuper: {
-        const ancestor = state.currentEnv().ancestor(distance.env, state.env_pool.items).?;
+        const ancestor = state.current_env.ancestor(distance.env);
         break :getSuper state.values.items[ancestor.values_begin..][distance.stack];
     };
     const superclass: *const data.Class = switch (super) {
@@ -390,10 +401,7 @@ fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     };
 
     const this: data.Value = getThis: {
-        const at = state.currentEnv().ancestor(
-            distance.env - 1,
-            state.env_pool.items,
-        ).?;
+        const at = state.current_env.ancestor(distance.env - 1);
         break :getThis state.values.items[at.values_begin..][0];
     };
 
@@ -414,8 +422,8 @@ fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     return .{ .func = try state.bind(method, obj) };
 }
 
-pub fn unbind(state: *State, _: data.Function) void {
-    state.popEnv();
+pub fn unbind(state: *State, f: data.Function) void {
+    state.restoreFrame(f.closure.*);
 }
 
 pub fn bind(
@@ -423,8 +431,12 @@ pub fn bind(
     f: data.Function,
     instancep: *data.Instance,
 ) AllocErr!data.Function {
-    const env = try state.pushEnv(f.closure);
-    errdefer state.popEnv();
+    // This environment has to be on the heap, since we're making a reference
+    // out of it.
+    const env: *Env = try state.env_pool.create();
+    errdefer state.env_pool.destroy(env);
+    state.pushFrame(env);
+    errdefer state.restoreFrame(env.*);
 
     // this sucks, because now I have to make instances pointers. Not cool!
     try state.values.append(state.arena.allocator(), .{ .instance = instancep });
@@ -469,16 +481,18 @@ fn visitAssign(state: *State, assign: ast.Expr.Assign) Result {
     var value = try state.visitExpr(assign.value.*);
 
     const distance: Depth = state.locals.get(local(assign.name)) orelse @panic("Unresolved variable");
-    const ancestor = state.currentEnv().ancestor(distance.env, state.env_pool.items).?;
-    state.indexFromEnvp(ancestor)[distance.stack] = value;
+    const ancestor = state.current_env.ancestor(distance.env);
+    state.values.items[ancestor.values_begin..][distance.stack] = value;
 
     return value;
 }
 
 fn visitLambda(state: *State, lam: ast.Expr.Lambda) Result {
+    const env = try state.env_pool.create();
+    env.* = state.current_env;
     return .{ .func = data.Function{
         .decl = lam.decl,
-        .closure = state.currentEnvHandle(),
+        .closure = env,
         .is_init = false,
     } };
 }
@@ -487,29 +501,13 @@ fn visitVar(state: *State, v: ast.Expr.Var) Result {
     return try state.lookupVariable(v);
 }
 
-/// Returns a pointer to the given environment.
-/// This pointer can be invalidated anywhere that a new environment is pushed,
-/// so it is advised to store the handle and call `envAt` for self-contained operations.
-/// The function call is inexpensive; it just indexes a linear array.
-pub inline fn envAt(state: *State, handle: EnvHandle) *Env {
-    return &state.env_pool.items[handle];
-}
-
-pub inline fn currentEnv(state: *State) *Env {
-    return state.envAt(state.currentEnvHandle());
-}
-
-pub inline fn currentEnvHandle(state: *const State) EnvHandle {
-    return state.env_pool.items.len - 1;
-}
-
 fn lookupVariable(state: *State, v: Token) Result {
     const distance: Depth = state.locals.get(local(v)) orelse @panic("unresolved variable");
-    const env: *Env = state.currentEnv().ancestor(distance.env, state.env_pool.items) orelse @panic("must have env at distance");
+    const env = state.current_env.ancestor(distance.env);
     // NOTE: from perf reports, this is where the most amount of cache misses
     // occur during execution. Looks like accessing the variable 'n' still makes
     // us miss a ton on performance.
-    return state.indexFromEnvp(env)[distance.stack];
+    return state.values.items[env.values_begin..][distance.stack];
 }
 
 fn visitUnary(state: *State, u: ast.Expr.Unary) Result {
