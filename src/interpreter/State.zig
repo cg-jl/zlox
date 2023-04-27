@@ -6,6 +6,10 @@ const context = @import("../context.zig");
 const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
 const AllocErr = std.mem.Allocator.Error;
+const Resolver = @import("Resolver.zig");
+
+const Depth = Resolver.Depth;
+const local = Resolver.local;
 
 const State = @This();
 const Result = data.Result;
@@ -13,50 +17,13 @@ const VoidResult = data.AllocOrSignal!void;
 
 pub const EnvHandle = usize;
 
-const Local = packed struct {
-    line: u16,
-    col: u32,
-
-    pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
-};
-
-const LocalContext = struct {
-    pub fn eql(_: LocalContext, a: Local, b: Local) bool {
-        return @bitCast(Local.U, a) == @bitCast(Local.U, b);
-    }
-
-    pub fn hash(_: LocalContext, k: Local) u64 {
-        return @bitCast(Local.U, k);
-    }
-};
-
-inline fn local(token: Token) Local {
-    return .{
-        .line = token.line,
-        .col = token.col,
-    };
-}
-
-const Depth = struct {
-    env: usize,
-    stack: u32,
-};
-
-const LocalMap = std.HashMapUnmanaged(
-    Local,
-    Depth,
-    LocalContext,
-    std.hash_map.default_max_load_percentage,
-);
-
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
 
 ctx: Ctx,
-// Apparently it's an expr-to-integer map. WTF?
-// We'll solve this properly by just storing its line,
-// since there can only be one variable declaration in one line.
-locals: LocalMap,
+// This is taking a lot of hits, even if it's just storing positions and their
+// respective code locations.
+locals: Resolver.LocalMap,
 current_env: Env,
 values: std.ArrayListUnmanaged(data.Value),
 // to be able to bind functions properly, we have to track instances
@@ -128,14 +95,6 @@ pub fn restoreFrame(state: *State, frame: Env) void {
     state.disposeValues(state.values.items[state.current_env.values_begin..]);
     state.values.items.len = state.current_env.values_begin;
     state.current_env = frame;
-}
-
-pub inline fn resolve(state: *State, at: Token, env_depth: usize, stack_depth: u32) AllocErr!void {
-    try state.locals.put(
-        state.arena.allocator(),
-        local(at),
-        .{ .env = env_depth, .stack = stack_depth },
-    );
 }
 
 pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
@@ -365,7 +324,7 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 }
 
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
-    const distance = state.locals.get(local(e.keyword)) orelse unreachable;
+    const distance = state.locals.get(Resolver.local(e.keyword)) orelse unreachable;
     const super: data.Value = getSuper: {
         const ancestor = state.current_env.ancestor(distance.env);
         break :getSuper state.values.items[ancestor.values_begin..][distance.stack];

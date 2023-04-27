@@ -10,19 +10,53 @@ const VarInfo = packed struct {
     initialized: bool,
     stack_index: u32,
 };
+pub inline fn local(token: ast.Expr.Var) Local {
+    return .{
+        .line = token.line,
+        .col = token.col,
+    };
+}
+
+pub const Local = packed struct {
+    line: u16,
+    col: u32,
+
+    pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
+};
+
+pub const Depth = struct {
+    env: usize,
+    stack: u32,
+};
+
+pub const LocalMap = std.HashMapUnmanaged(
+    Local,
+    Depth,
+    LocalContext,
+    std.hash_map.default_max_load_percentage,
+);
+const LocalContext = struct {
+    pub fn eql(_: LocalContext, a: Local, b: Local) bool {
+        return @bitCast(Local.U, a) == @bitCast(Local.U, b);
+    }
+
+    pub fn hash(_: LocalContext, k: Local) u64 {
+        return @bitCast(Local.U, k);
+    }
+};
 
 const Scope = std.StringHashMapUnmanaged(VarInfo);
 
-interpreter: *State,
+locals: LocalMap.Managed,
 scopes: std.ArrayListUnmanaged(Scope) = .{},
 current_function: FuncType = FuncType.none,
 current_class: ClassType = ClassType.none,
 arena: std.heap.ArenaAllocator,
 
-pub fn init(interpreter: *State, alloc: std.mem.Allocator) !Resolver {
+pub fn init(alloc: std.mem.Allocator) !Resolver {
     var res = Resolver{
-        .interpreter = interpreter,
         .arena = std.heap.ArenaAllocator.init(alloc),
+        .locals = LocalMap.Managed.init(alloc),
     };
     // global scope
     try res.beginScope();
@@ -31,6 +65,7 @@ pub fn init(interpreter: *State, alloc: std.mem.Allocator) !Resolver {
 }
 
 pub fn deinit(r: *Resolver) void {
+    // note that 'locals' isn't deallocated since it's moved to the interpreter
     r.arena.deinit();
 }
 
@@ -38,31 +73,6 @@ const ClassType = enum(u2) { none, class, subclass };
 const FuncType = enum(u2) { none, function, initializer, method };
 
 const Result = data.AllocErr!void;
-
-const expr_vt = ast.Expr.VisitorVTable(Result, Resolver){
-    .visitVar = resolveVar,
-    .visitUnary = resolveUnary,
-    .visitThis = resolveThis,
-    .visitSuper = resolveSuper,
-    .visitSet = resolveSet,
-    .visitBinary = resolveBinary,
-    .visitLiteral = resolveLiteral,
-    .visitGet = resolveGet,
-    .visitCall = resolveCall,
-    .visitAssign = resolveAssign,
-    .visitLambda = resolveLambda,
-};
-const stmt_vt = ast.Stmt.VisitorVTable(Result, Resolver){
-    .visitExpr = resolveExpr,
-    .visitBlock = resolveBlock,
-    .visitWhile = resolveWhile,
-    .visitVar = resolveVarSt,
-    .visitReturn = resolveReturn,
-    .visitPrint = resolvePrint,
-    .visitIf = resolveIf,
-    .visitFunction = resolveFunction,
-    .visitClass = resolveClass,
-};
 
 fn resolveInnerClass(r: *Resolver, methods: []const ast.Stmt.Function) Result {
     try r.beginScope();
@@ -266,7 +276,10 @@ fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
     while (i > 0) : (i -= 1) {
         const scope: *const Scope = &r.scopes.items[i - 1];
         if (scope.get(name.lexeme)) |info| {
-            try r.interpreter.resolve(name, r.scopes.items.len - i, info.stack_index);
+            try r.locals.put(local(name), .{
+                .env = r.scopes.items.len - i,
+                .stack = info.stack_index,
+            });
             return;
         }
     }

@@ -60,10 +60,12 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
 
     // Make sure to free resolver's memory
     {
-        var resolver = try Resolver.init(&state, gpa);
+        var resolver = try Resolver.init(gpa);
         defer resolver.deinit();
         try resolver.resolveBlock(stmts.items);
+        state.locals = resolver.locals.unmanaged;
     }
+    defer state.locals.deinit(gpa);
 
     if (Context.has_errored) return;
 
@@ -88,8 +90,9 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     var state = try Interpreter.init(gpa);
     defer state.deinit();
 
-    var resolver = try Resolver.init(&state, gpa);
+    var resolver = try Resolver.init(gpa);
     defer resolver.deinit();
+    defer resolver.locals.deinit();
 
     defer builder.deinit();
     defer gp_arena.deinit();
@@ -134,12 +137,14 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
             if (Context.has_errored) continue;
             try resolver.resolveBlock(stmts.items);
             if (Context.has_errored) continue;
+            state.locals = resolver.locals.unmanaged;
             try state.tryExecBlock(stmts.items);
         } else {
             const expr = try parser.tryExpression();
             if (expr) |e| {
                 try resolver.resolveExpr(e);
                 if (Context.has_errored) continue;
+                state.locals = resolver.locals.unmanaged;
                 try state.tryPrintExpr(e);
             }
         }
