@@ -87,24 +87,24 @@ Measuring...
 ### `fib_opt.lox` - Basic fibonacci loop
 
 ```
-1.65580141e+08
-2.151e-05
+3.4420420399999886e-05
 ```
 
-Around 21.5 us. What I have improved does not affect here, since it's only run once.
+Around 34 us. It seems that I have regressed, but I now have a
+[benchmark](./bench.py) for this run.
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
 1.65580141e+08
-4.5402189658e+01
+4.3980456197e+01
 ```
 ```
 1.65580141e+08
-4.3980456197e+01
+4.1694128384e+01
 ```
 
-About ~45~ 43s. A 3% improvement, by storing the values directly on a single
-array. This didn't go as I expected, maybe I've introduced some overhead
-elsewhere.
+About ~43~ 41s. A 5% improvement, by storing the environments on the stack
+where appropiate. This isn't going as I expected, so I'll have to revise perf
+reports.
