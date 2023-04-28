@@ -4,6 +4,8 @@ const std = @import("std");
 const context = @import("../context.zig");
 const data = @import("data.zig");
 
+const Local = data.Local;
+
 const ast = @import("../ast.zig");
 
 const VarInfo = packed struct {
@@ -16,13 +18,6 @@ pub inline fn local(token: ast.Expr.Var) Local {
         .col = token.col,
     };
 }
-
-pub const Local = packed struct {
-    line: u16,
-    col: u32,
-
-    pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
-};
 
 pub const Depth = struct {
     env: usize,

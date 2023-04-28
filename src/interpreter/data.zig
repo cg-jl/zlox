@@ -6,6 +6,13 @@ const Env = @import("Env.zig");
 const Ctx = @import("Ctx.zig");
 pub const Result = AllocOrSignal!Value;
 
+pub const Local = packed struct {
+    line: u16,
+    col: u32,
+
+    pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
+};
+
 pub const FatStr = struct {
     was_allocated: bool,
     string: []const u8,
