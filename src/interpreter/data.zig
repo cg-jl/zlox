@@ -13,6 +13,11 @@ pub const Local = packed struct {
     pub const U = std.meta.Int(.unsigned, @bitSizeOf(@This()));
 };
 
+pub const Depth = struct {
+    env: usize,
+    stack: u32,
+};
+
 pub const FatStr = struct {
     was_allocated: bool,
     string: []const u8,

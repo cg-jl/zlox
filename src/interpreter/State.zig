@@ -8,7 +8,7 @@ const Token = @import("../Token.zig");
 const AllocErr = std.mem.Allocator.Error;
 const Resolver = @import("Resolver.zig");
 
-const Depth = Resolver.Depth;
+const Depth = data.Depth;
 const local = Resolver.local;
 
 const State = @This();

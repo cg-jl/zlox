@@ -5,6 +5,7 @@ const context = @import("../context.zig");
 const data = @import("data.zig");
 
 const Local = data.Local;
+const Depth = data.Depth;
 
 const ast = @import("../ast.zig");
 
@@ -18,11 +19,6 @@ pub inline fn local(token: ast.Expr.Var) Local {
         .col = token.col,
     };
 }
-
-pub const Depth = struct {
-    env: usize,
-    stack: u32,
-};
 
 pub const LocalMap = std.HashMapUnmanaged(
     Local,
