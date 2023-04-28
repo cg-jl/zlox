@@ -86,13 +86,8 @@ fn resolveClass(r: *Resolver, class: ast.Stmt.Class) Result {
 
     if (class.superclass) |_| {
         r.current_class = .subclass;
-        try r.beginScope();
-        defer r.endScope();
-        try r.defineName("super");
-        try r.resolveInnerClass(class.methods);
-    } else {
-        try r.resolveInnerClass(class.methods);
     }
+    try r.resolveInnerClass(class.methods);
 }
 
 fn resolveFunction(r: *Resolver, func: ast.Stmt.Function) Result {

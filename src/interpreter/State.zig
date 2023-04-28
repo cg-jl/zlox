@@ -152,7 +152,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     const class_value_ptr = try state.values.addOne(state.arena.allocator());
 
     var superclass: ?*data.Class = null;
-    const class_env = if (stmt.superclass) |sp| hasSuper: {
+    if (stmt.superclass) |sp| {
         const super = try state.lookupVariable(sp);
         const superc: *data.Class = switch (super) {
             .class => |c| c,
@@ -165,23 +165,15 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
         // we can only have one level of inheritance.
         // So we can have the class have a refcount
 
-        const class_env = try state.env_pool.create();
-        state.pushFrame(class_env);
         superc.refcount += 1;
-        // It's ok to make a copy of the class info since they're immutable.
-        try state.values.append(state.arena.allocator(), .{ .class = superc });
         superclass = superc;
-        break :hasSuper class_env;
-    } else cloneCurrent: {
-        const clone = try state.env_pool.create();
-        clone.* = state.current_env;
-        break :cloneCurrent clone;
-    };
-
-    errdefer {
-        if (stmt.superclass) |_| state.restoreFrame(class_env.*);
-        state.env_pool.destroy(class_env);
     }
+
+    const class_env = cloneCurrentEnv: {
+        const frame: *Env = try state.env_pool.create();
+        state.pushFrame(frame);
+        break :cloneCurrentEnv frame;
+    };
 
     var methods: std.StringHashMapUnmanaged(data.Function) = .{};
 
