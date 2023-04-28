@@ -1,6 +1,6 @@
 const std = @import("std");
 const data = @import("data.zig");
-const Env = @import("Env.zig");
+const Frame = @import("Frame.zig");
 const ast = @import("../ast.zig");
 const context = @import("../context.zig");
 const Ctx = @import("Ctx.zig");
@@ -15,8 +15,6 @@ const State = @This();
 const Result = data.Result;
 const VoidResult = data.AllocOrSignal!void;
 
-pub const EnvHandle = usize;
-
 // TODO: add a GPA with underlying arena {.underlying_allocator = arena} to the
 // state, for the env stuff
 
@@ -24,12 +22,12 @@ ctx: Ctx,
 // This is taking a lot of hits, even if it's just storing positions and their
 // respective code locations.
 locals: Resolver.LocalMap,
-current_env: Env,
+current_env: Frame,
 values: std.ArrayListUnmanaged(data.Value),
 // to be able to bind functions properly, we have to track instances
 // apart
 instance_pool: std.heap.MemoryPool(data.Instance),
-env_pool: std.heap.MemoryPool(Env),
+env_pool: std.heap.MemoryPool(Frame),
 class_pool: std.heap.MemoryPool(data.Class),
 arena: std.heap.ArenaAllocator,
 timer: std.time.Timer,
@@ -44,7 +42,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
         1,
     );
 
-    const globals = Env{ .enclosing = undefined, .values_begin = 0 };
+    const globals = Frame{ .enclosing = undefined, .values_begin = 0 };
     values.appendAssumeCapacity(
         .{ .callable = data.CallableVT{
             .ptr = undefined,
@@ -58,7 +56,7 @@ pub fn init(gpa: std.mem.Allocator) !State {
         .ctx = Ctx.init(gpa),
         .current_env = globals,
         .locals = .{},
-        .env_pool = std.heap.MemoryPool(Env).init(gpa),
+        .env_pool = std.heap.MemoryPool(Frame).init(gpa),
         .values = values,
         .instance_pool = std.heap.MemoryPool(data.Instance).init(gpa),
         .class_pool = std.heap.MemoryPool(data.Class).init(gpa),
@@ -77,7 +75,7 @@ pub fn deinit(state: *State) void {
     state.ctx.deinit();
 }
 
-pub fn pushFrame(state: *State, frame: *Env) void {
+pub fn pushFrame(state: *State, frame: *Frame) void {
     frame.* = state.current_env;
     state.current_env = .{
         .enclosing = frame,
@@ -91,7 +89,7 @@ fn disposeValues(state: *State, vs: []data.Value) void {
     }
 }
 
-pub fn restoreFrame(state: *State, frame: Env) void {
+pub fn restoreFrame(state: *State, frame: Frame) void {
     state.disposeValues(state.values.items[state.current_env.values_begin..]);
     state.values.items.len = state.current_env.values_begin;
     state.current_env = frame;
@@ -119,7 +117,7 @@ pub fn tryPrintExpr(state: *State, e: ast.Expr) AllocErr!void {
 }
 
 pub fn tryExecBlock(state: *State, stmts: []const ast.Stmt) AllocErr!void {
-    var frame: Env = undefined;
+    var frame: Frame = undefined;
     state.pushFrame(&frame);
     defer state.restoreFrame(frame);
     state.executeBlock(stmts) catch |err| {
@@ -170,7 +168,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
     }
 
     const class_env = cloneCurrentEnv: {
-        const frame: *Env = try state.env_pool.create();
+        const frame: *Frame = try state.env_pool.create();
         state.pushFrame(frame);
         break :cloneCurrentEnv frame;
     };
@@ -202,7 +200,7 @@ fn visitClass(state: *State, stmt: ast.Stmt.Class) VoidResult {
 }
 
 fn visitBlock(state: *State, block: []const ast.Stmt) VoidResult {
-    var frame: Env = undefined;
+    var frame: Frame = undefined;
     state.pushFrame(&frame);
     defer state.restoreFrame(frame);
 
@@ -252,7 +250,7 @@ fn visitIf(state: *State, iff: ast.Stmt.If) VoidResult {
 }
 
 fn visitFunction(state: *State, e: ast.Stmt.Function) VoidResult {
-    const clone: *Env = try state.env_pool.create();
+    const clone: *Frame = try state.env_pool.create();
     clone.* = state.current_env;
     const function = data.Function{
         .decl = e.decl,
@@ -353,7 +351,7 @@ pub fn bind(
 ) AllocErr!data.Function {
     // This environment has to be on the heap, since we're making a reference
     // out of it.
-    const env: *Env = try state.env_pool.create();
+    const env: *Frame = try state.env_pool.create();
     errdefer state.env_pool.destroy(env);
     state.pushFrame(env);
     errdefer state.restoreFrame(env.*);
@@ -579,11 +577,4 @@ inline fn visitStmt(state: *State, stmt: ast.Stmt) VoidResult {
         .block => |b| try state.visitBlock(b),
         .class => |c| try state.visitClass(c),
     }
-}
-
-pub inline fn indexFromEnv(state: *State, env: EnvHandle) []data.Value {
-    return state.indexFromEnvp(state.envAt(env));
-}
-pub inline fn indexFromEnvp(state: *State, env: *Env) []data.Value {
-    return state.values.items[env.values_begin..];
 }

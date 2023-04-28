@@ -2,7 +2,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const State = @import("State.zig");
 const Token = @import("../Token.zig");
-const Env = @import("Env.zig");
+const Frame = @import("Frame.zig");
 const Ctx = @import("Ctx.zig");
 pub const Result = AllocOrSignal!Value;
 
@@ -45,7 +45,7 @@ pub const Value = union(enum(u3)) {
         if (self.* == .class) {
             // we have our own env for the super thing
             if (self.class.superclass) |super| {
-                const env: ?*const Env = getEnv: {
+                const env: ?*const Frame = getEnv: {
                     var it = self.class.methods.valueIterator();
                     const v = it.next() orelse break :getEnv null;
                     break :getEnv v.closure;
@@ -142,19 +142,18 @@ pub const Class = struct {
 };
 pub const Function = struct {
     decl: ast.FuncDecl,
-    closure: *Env,
+    closure: *Frame,
     is_init: bool,
 
     pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const ast.Expr) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
-
 
         try st.values.ensureUnusedCapacity(st.arena.allocator(), args.len);
         for (args) |a| {
             st.values.appendAssumeCapacity(try st.visitExpr(a));
         }
 
-        var frame: Env = undefined;
+        var frame: Frame = undefined;
         st.pushFrame(&frame);
         defer st.restoreFrame(frame);
 
