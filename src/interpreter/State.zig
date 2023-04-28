@@ -325,24 +325,18 @@ fn instanceGet(state: *State, instance: *data.Instance, token: Token) Result {
 
 fn visitSuper(state: *State, e: ast.Expr.Super) Result {
     const distance = state.locals.get(Resolver.local(e.keyword)) orelse unreachable;
-    const super: data.Value = getSuper: {
-        const ancestor = state.current_env.ancestor(distance.env);
-        break :getSuper state.values.items[ancestor.values_begin..][distance.stack];
-    };
-    const superclass: *const data.Class = switch (super) {
-        .class => |c| c.superclass orelse unreachable,
-        else => unreachable,
-    };
 
     const this: data.Value = getThis: {
-        const at = state.current_env.ancestor(distance.env - 1);
-        break :getThis state.values.items[at.values_begin..][0];
+        const at = state.current_env.ancestor(distance.env);
+        break :getThis state.values.items[at.values_begin..][distance.stack];
     };
 
     const obj: *data.Instance = switch (this) {
         .instance => |i| i,
         else => unreachable,
     };
+
+    const superclass: *const data.Class = obj.class.superclass.?;
 
     const method: data.Function = superclass.findMethod(e.method.lexeme) orelse {
         state.ctx.report(e.method, try std.fmt.allocPrint(

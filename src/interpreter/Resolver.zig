@@ -173,7 +173,7 @@ fn resolveSuper(r: *Resolver, s: ast.Expr.Super) Result {
     } else if (r.current_class != .subclass) {
         context.reportToken(s.keyword, "Cannot use 'super' in a class with no superclass");
     } else {
-        try r.resolveLocal(s.keyword);
+        std.debug.assert(try r.resolveName("this", local(s.keyword)));
     }
 }
 
@@ -181,7 +181,7 @@ fn resolveThis(r: *Resolver, th: ast.Expr.Var) Result {
     if (r.current_class == .none) {
         context.reportToken(th, "Cannot use 'this' outside of a class");
     } else {
-        try r.resolveLocal(th);
+        std.debug.assert(try r.resolveName("this", local(th)));
     }
 }
 
@@ -262,20 +262,24 @@ fn define(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
     try r.defineName(name.lexeme);
 }
 
-fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
+fn resolveName(r: *Resolver, name: []const u8, use_local: Local) data.AllocErr!bool {
     var i: usize = r.scopes.items.len;
-    while (i > 0) : (i -= 1) {
+    return while (i > 0) : (i -= 1) {
         const scope: *const Scope = &r.scopes.items[i - 1];
-        if (scope.get(name.lexeme)) |info| {
-            try r.locals.put(local(name), .{
+        if (scope.get(name)) |info| {
+            try r.locals.put(use_local, .{
                 .env = r.scopes.items.len - i,
                 .stack = info.stack_index,
             });
-            return;
+            break true;
         }
-    }
+    } else false;
+}
 
-    context.reportToken(name, "Could not resolve variable");
+fn resolveLocal(r: *Resolver, name: ast.Expr.Var) data.AllocErr!void {
+    const could_resolve_name = try r.resolveName(name.lexeme, local(name));
+    if (!could_resolve_name)
+        context.reportToken(name, "Could not resolve variable");
 }
 
 fn beginScope(r: *Resolver) Result {
