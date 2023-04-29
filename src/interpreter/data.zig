@@ -47,40 +47,35 @@ pub const Value = union(enum(u3)) {
         }
     }
 
-    pub fn depcount(self: *const Value) usize {
-        if (self.* == .class) return self.class.instance_count +
-            self.class.refcount;
-        if (self.* == .instance) return self.instance.refcount;
-        return 0;
-    }
-
     // The value went out of scope
-    pub fn dispose(self: *Value, state: *Core) void {
+    pub fn dispose(self: *Value, core: *Core) void {
         if (self.* == .class) {
-            // we have our own env for the super thing
-            if (self.class.superclass) |super| {
-                const env: ?*const Frame = getEnv: {
-                    var it = self.class.methods.valueIterator();
-                    const v = it.next() orelse break :getEnv null;
-                    break :getEnv v.closure;
-                };
-                if (env) |e| {
-                    state.restoreFrame(e.*);
+            if (self.class.refcount == 0) {
+                // we have our own env for the super thing
+                if (self.class.superclass) |super| {
+                    const env: ?*const Frame = getEnv: {
+                        var it = self.class.methods.valueIterator();
+                        const v = it.next() orelse break :getEnv null;
+                        break :getEnv v.closure;
+                    };
+                    if (env) |e| {
+                        core.restoreFrame(e.*);
+                    }
+                    super.refcount -= 1;
                 }
-                super.refcount -= 1;
+                self.class.methods.deinit(core.arena.allocator());
+                core.class_pool.destroy(self.class);
             }
-            self.class.methods.deinit(state.arena.allocator());
-            state.class_pool.destroy(self.class);
         } else if (self.* == .instance) {
             self.instance.refcount -= 1;
             if (self.instance.refcount == 0) {
                 self.instance.class.instance_count -= 1;
-                self.instance.fields.deinit(state.arena.allocator());
+                self.instance.fields.deinit(core.arena.allocator());
             }
         } else if (self.* == .string) {
             if (self.string.alloc_refcount) |r| {
                 if (r == 0)
-                    state.ctx.ally().free(self.string.string);
+                    core.ctx.ally().free(self.string.string);
             }
         }
     }

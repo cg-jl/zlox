@@ -73,7 +73,7 @@ pub inline fn pushFrame(core: *Core, frame: *Frame) void {
 
 fn disposeValues(core: *Core, vs: []data.Value) void {
     for (vs) |*v| {
-        if (v.depcount() == 0) v.dispose(core);
+        v.dispose(core);
     }
 }
 
