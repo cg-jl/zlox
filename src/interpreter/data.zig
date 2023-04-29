@@ -1,10 +1,12 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
-const State = @import("State.zig");
+const Core = @import("Core.zig");
+const Walker = @import("Walker.zig");
 const Token = @import("../Token.zig");
 const Frame = @import("Frame.zig");
 const Ctx = @import("Ctx.zig");
 pub const Result = AllocOrSignal!Value;
+pub const VoidResult = AllocOrSignal!void;
 
 pub const Local = packed struct {
     line: u16,
@@ -19,7 +21,7 @@ pub const Depth = struct {
 };
 
 pub const FatStr = struct {
-    was_allocated: bool,
+    alloc_refcount: ?usize,
     string: []const u8,
 };
 
@@ -33,6 +35,18 @@ pub const Value = union(enum(u3)) {
     instance: *Instance,
     nil: void,
 
+    pub fn addRef(self: *Value) void {
+        switch (self.*) {
+            .string => |*s| if (s.alloc_refcount) |*r| {
+                r.* = r.* + 1;
+            },
+            .func => |*f| f.refcount += 1,
+            .class => |c| c.refcount += 1,
+            .instance => |i| i.refcount += 1,
+            else => {},
+        }
+    }
+
     pub fn depcount(self: *const Value) usize {
         if (self.* == .class) return self.class.instance_count +
             self.class.refcount;
@@ -41,7 +55,7 @@ pub const Value = union(enum(u3)) {
     }
 
     // The value went out of scope
-    pub fn dispose(self: *Value, state: *State) void {
+    pub fn dispose(self: *Value, state: *Core) void {
         if (self.* == .class) {
             // we have our own env for the super thing
             if (self.class.superclass) |super| {
@@ -63,8 +77,11 @@ pub const Value = union(enum(u3)) {
                 self.instance.class.instance_count -= 1;
                 self.instance.fields.deinit(state.arena.allocator());
             }
-        } else if (self.* == .string and self.string.was_allocated) {
-            state.ctx.ally().free(self.string.string);
+        } else if (self.* == .string) {
+            if (self.string.alloc_refcount) |r| {
+                if (r == 0)
+                    state.ctx.ally().free(self.string.string);
+            }
         }
     }
 
@@ -110,15 +127,15 @@ pub const Class = struct {
     superclass: ?*Class,
     refcount: usize = 0,
     instance_count: usize = 0,
-    fn call(p: *const anyopaque, i: *State, args: []const ast.Expr) Result {
+    fn call(p: *const anyopaque, i: *Walker, args: []const ast.Expr) Result {
         const class = @ptrCast(*const Class, @alignCast(@alignOf(Class), p));
-        const instance: *Instance = try i.instance_pool.create();
-        errdefer i.instance_pool.destroy(instance);
+        const instance: *Instance = try i.core.instance_pool.create();
+        errdefer i.core.instance_pool.destroy(instance);
         if (class.init_method) |im| {
-            const bound = try i.bind(im, instance);
-            defer i.unbind(bound);
+            const bound = try i.core.bind(im, instance);
+            defer i.core.unbind(bound);
             var res = try Function.makeCall(&bound, i, args);
-            res.dispose(i);
+            res.dispose(&i.core);
         }
         return Value{ .instance = instance };
     }
@@ -144,38 +161,39 @@ pub const Function = struct {
     decl: ast.FuncDecl,
     closure: *Frame,
     is_init: bool,
+    refcount: usize = 0,
 
-    pub fn makeCall(ptr: *const anyopaque, st: *State, args: []const ast.Expr) Result {
+    pub fn makeCall(ptr: *const anyopaque, st: *Walker, args: []const ast.Expr) Result {
         const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
 
-        try st.values.ensureUnusedCapacity(st.arena.allocator(), args.len);
+        try st.core.values.ensureUnusedCapacity(st.core.arena.allocator(), args.len);
         for (args) |a| {
-            st.values.appendAssumeCapacity(try st.visitExpr(a));
+            st.core.values.appendAssumeCapacity(try st.visitExpr(a));
         }
 
         var frame: Frame = undefined;
-        st.pushFrame(&frame);
-        defer st.restoreFrame(frame);
+        st.core.pushFrame(&frame);
+        defer st.core.restoreFrame(frame);
 
         // Make sure that the ancestor calls point to the correct environment.
-        st.current_env.enclosing = func.closure;
+        st.core.current_env.enclosing = func.closure;
         // Make sure that the arguments are popped too.
         // We don't create the frame before the arguments are evaluated
         // because then we introduce a new scope where it shouldn't be.
-        st.current_env.values_begin -= args.len;
+        st.core.current_env.values_begin -= args.len;
 
         const ret_val: Value = catchReturn: {
             st.executeBlock(func.decl.body) catch |err| {
                 if (err == error.Return) {
-                    const ret = st.ret_val orelse Value.nil();
-                    st.ret_val = null;
+                    const ret = st.core.ret_val orelse Value.nil();
+                    st.core.ret_val = null;
                     break :catchReturn ret;
                 } else return err;
             };
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return st.values.items[func.closure.values_begin..][0];
+        if (func.is_init) return st.core.values.items[func.closure.values_begin..][0];
         return ret_val;
     }
 
@@ -196,7 +214,7 @@ pub const CallableVT = struct {
     ptr: *const anyopaque,
     arity: u8, // cannot be > 255
     repr: []const u8,
-    call: *const fn (*const anyopaque, *State, []const ast.Expr) Result,
+    call: *const fn (*const anyopaque, *Walker, []const ast.Expr) Result,
 };
 
 pub const Signal = error{ RuntimeError, Return };

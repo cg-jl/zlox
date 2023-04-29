@@ -1,5 +1,4 @@
 const Resolver = @This();
-const State = @import("State.zig");
 const std = @import("std");
 const context = @import("../context.zig");
 const data = @import("data.zig");

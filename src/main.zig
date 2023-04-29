@@ -3,7 +3,7 @@ const Context = @import("context.zig");
 const Scanner = @import("Scanner.zig");
 const Token = @import("Token.zig");
 const Resolver = @import("interpreter/Resolver.zig");
-const Interpreter = @import("interpreter/State.zig");
+const Walker = @import("interpreter/Walker.zig");
 const Parser = @import("Parser.zig");
 const ast = @import("ast.zig");
 
@@ -55,8 +55,8 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     try parser.parse(&stmts);
     if (Context.has_errored) return;
 
-    var state = try Interpreter.init(gpa);
-    defer state.deinit();
+    var state = try Walker.initCore(gpa);
+    defer state.core.deinit();
 
     // Make sure to free resolver's memory
     {
@@ -87,8 +87,8 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
 
     var builder = ast.Builder.init(gpa);
     var gp_arena = std.heap.ArenaAllocator.init(gpa);
-    var state = try Interpreter.init(gpa);
-    defer state.deinit();
+    var state = try Walker.initCore(gpa);
+    defer state.core.deinit();
 
     var resolver = try Resolver.init(gpa);
     defer resolver.deinit();

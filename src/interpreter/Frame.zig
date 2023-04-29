@@ -4,7 +4,6 @@ const Frame = @This();
 const Alloc = std.mem.Allocator;
 const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
-const State = @import("State.zig");
 
 values_begin: usize,
 enclosing: ?*const Frame,
