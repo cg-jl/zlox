@@ -87,23 +87,18 @@ Measuring...
 ### `fib_opt.lox` - Basic fibonacci loop
 
 ```
-3.4420420399999886e-05
+3.796320159999999e-05
 ```
 
-Around 34 us. It seems that I have regressed, but I now have a
-[benchmark](./bench.py) for this run.
+Around 37 us. Around the average
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
 1.65580141e+08
-4.1694128384e+01
-```
-```
-1.65580141e+08
-3.650257832e+01
+3.2387978582e+01
 ```
 
-About ~41~ 36s. A 12% improvement, by removing the redundant grouping case and
-inlining the visiting switch.
+About ~36~ 32s. An 11% improvement, by removing a layer of cache indirection.
+The cumulative improvement is of **79%** (relative to be36de134e4b64949a6483a41a0c27ff8dda5b1d)
