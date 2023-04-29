@@ -154,6 +154,5 @@ pub fn bind(
     return data.Function{
         .decl = f.decl,
         .closure = env,
-        .is_init = f.is_init,
     };
 }

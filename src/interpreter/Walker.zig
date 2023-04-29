@@ -172,7 +172,6 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
                 .{ .func = data.Function{
                     .decl = func.decl,
                     .closure = clone,
-                    .is_init = false,
                 } },
             );
         },
@@ -250,9 +249,9 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
                     const method = data.Function{
                         .decl = m.decl,
                         .closure = class_closure,
-                        .is_init = std.mem.eql(u8, m.name.lexeme, "init"),
                     };
-                    if (method.is_init) init_method = method;
+                    const is_init = std.mem.eql(u8, m.name.lexeme, "init");
+                    if (is_init) init_method = method;
                     try methods.put(state.core.arena.allocator(), m.name.lexeme, method);
                 }
             }
@@ -313,7 +312,6 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
             return .{ .func = data.Function{
                 .decl = lambda.decl,
                 .closure = frame,
-                .is_init = false,
             } };
         },
         .assign => |a| {

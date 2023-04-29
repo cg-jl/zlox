@@ -134,8 +134,7 @@ pub const Class = struct {
         if (class.init_method) |im| {
             const bound = try i.core.bind(im, instance);
             defer i.core.unbind(bound);
-            var res = try Function.makeCall(&bound, i, args);
-            res.dispose(&i.core);
+            try bound.makeInitCall(i, args);
         }
         return Value{ .instance = instance };
     }
@@ -159,21 +158,16 @@ pub const Class = struct {
 };
 pub const Function = struct {
     decl: ast.FuncDecl,
-    closure: *Frame,
-    is_init: bool,
+    closure: *const Frame,
     refcount: usize = 0,
 
-    pub fn makeCall(ptr: *const anyopaque, st: *Walker, args: []const ast.Expr) Result {
-        const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
-
+    inline fn setupCall(func: *const Function, st: *Walker, args: []const ast.Expr, frame: *Frame) AllocOrSignal!void {
         try st.core.values.ensureUnusedCapacity(st.core.arena.allocator(), args.len);
         for (args) |a| {
             st.core.values.appendAssumeCapacity(try st.visitExpr(a));
         }
 
-        var frame: Frame = undefined;
-        st.core.pushFrame(&frame);
-        defer st.core.restoreFrame(frame);
+        st.core.pushFrame(frame);
 
         // Make sure that the ancestor calls point to the correct environment.
         st.core.current_env.enclosing = func.closure;
@@ -181,6 +175,29 @@ pub const Function = struct {
         // We don't create the frame before the arguments are evaluated
         // because then we introduce a new scope where it shouldn't be.
         st.core.current_env.values_begin -= args.len;
+    }
+
+    fn makeInitCall(func: *const Function, st: *Walker, args: []const ast.Expr) VoidResult {
+        var frame: Frame = undefined;
+        try func.setupCall(st, args, &frame);
+        defer st.core.restoreFrame(frame);
+
+        st.executeBlock(func.decl.body) catch |err| {
+            if (err != error.Return) return err;
+            if (st.core.ret_val) |*r| {
+                r.dispose(&st.core);
+            }
+            st.core.ret_val = null;
+        };
+    }
+
+    pub fn makeCall(ptr: *const anyopaque, st: *Walker, args: []const ast.Expr) Result {
+        const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
+
+        var frame: Frame = undefined;
+
+        try func.setupCall(st, args, &frame);
+        defer st.core.restoreFrame(frame);
 
         const ret_val: Value = catchReturn: {
             st.executeBlock(func.decl.body) catch |err| {
@@ -193,7 +210,6 @@ pub const Function = struct {
             break :catchReturn Value.nil();
         };
 
-        if (func.is_init) return st.core.values.items[func.closure.values_begin..][0];
         return ret_val;
     }
 
