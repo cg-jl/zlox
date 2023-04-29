@@ -63,7 +63,7 @@ pub fn deinit(core: *Core) void {
     core.ctx.deinit();
 }
 
-pub fn pushFrame(core: *Core, frame: *Frame) void {
+pub inline fn pushFrame(core: *Core, frame: *Frame) void {
     frame.* = core.current_env;
     core.current_env = .{
         .enclosing = undefined,
@@ -77,7 +77,7 @@ fn disposeValues(core: *Core, vs: []data.Value) void {
     }
 }
 
-pub fn restoreFrame(core: *Core, frame: Frame) void {
+pub inline fn restoreFrame(core: *Core, frame: Frame) void {
     core.disposeValues(core.values.items[core.current_env.values_begin..]);
     core.values.items.len = core.current_env.values_begin;
     core.current_env = frame;
@@ -117,7 +117,7 @@ pub fn instanceGet(storage: *Core, this: data.Value, token: Token) Result {
     return error.RuntimeError;
 }
 
-pub fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
+pub inline fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
     const instance = if (this == .instance) this.instance else unreachable;
     const superclass: *const data.Class = instance.class.superclass.?;
     const method: data.Function = superclass.findMethod(method_tok.lexeme) orelse {
@@ -132,7 +132,7 @@ pub fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
     return .{ .func = try core.bind(method, instance) };
 }
 
-pub fn unbind(core: *Core, f: data.Function) void {
+pub inline fn unbind(core: *Core, f: data.Function) void {
     core.restoreFrame(f.closure.*);
 }
 
