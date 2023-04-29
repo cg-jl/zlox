@@ -328,26 +328,44 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
         .call => |c| {
             const call_info: ast.Expr.Call = c;
             const callee = try state.visitExpr(call_info.callee.*);
-            const vt: data.CallableVT = switch (callee) {
-                .func => |*f| f.getVT(),
-                .class => |cl| cl.getVT(),
-                .callable => |t| t,
+
+            switch (callee) {
+                .func => |*f| {
+                    const func: *const data.Function = f;
+                    try @call(.always_inline, Core.checkCallArgCount, .{
+                        &state.core,             func.decl.params.len,
+                        call_info.arguments.len, call_info.paren,
+                    });
+                    return try @call(.always_inline, data.Function.makeCall, .{
+                        func,
+                        state,
+                        call_info.arguments,
+                    });
+                },
+                .class => |cl| {
+                    const cp: *const data.Class = cl;
+                    const arity = if (cp.init_method) |m| m.decl.params.len else 0;
+                    try @call(.always_inline, Core.checkCallArgCount, .{
+                        &state.core,     arity, call_info.arguments.len,
+                        call_info.paren,
+                    });
+                    return try @call(.always_inline, data.Class.call, .{
+                        cp, state, call_info.arguments,
+                    });
+                },
+                .callable => |v| {
+                    const vt: data.CallableVT = v;
+                    try @call(.always_inline, Core.checkCallArgCount, .{
+                        &state.core,     vt.arity, call_info.arguments.len,
+                        call_info.paren,
+                    });
+                    return try vt.call(vt.ptr, state, call_info.arguments);
+                },
                 else => {
-                    state.core.ctx.report(call_info.paren, "Can only call functions and classes");
+                    state.core.ctx.report(call_info.paren, "Can only call native fns, classes or functions");
                     return error.RuntimeError;
                 },
-            };
-
-            if (call_info.arguments.len != vt.arity) {
-                state.core.ctx.report(call_info.paren, try std.fmt.allocPrint(
-                    state.core.ctx.ally(),
-                    "Expected {} arguments but got {}",
-                    .{ vt.arity, call_info.arguments.len },
-                ));
-                return error.RuntimeError;
             }
-
-            return try vt.call(vt.ptr, state, call_info.arguments);
         },
         .this => |t| return state.lookupVariable(t),
         .super => |s| {

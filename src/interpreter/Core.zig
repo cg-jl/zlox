@@ -117,6 +117,21 @@ pub fn instanceGet(storage: *Core, this: data.Value, token: Token) Result {
     return error.RuntimeError;
 }
 
+pub inline fn checkCallArgCount(
+    core: *Core,
+    expected: usize,
+    got: usize,
+    report_token: Token,
+) data.AllocOrSignal!void {
+    if (expected != got) {
+        core.ctx.report(report_token, try std.fmt.allocPrint(
+            core.ctx.ally(),
+            "Expected {} arguments but got {}",
+            .{ expected, got },
+        ));
+    }
+}
+
 pub inline fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
     const instance = if (this == .instance) this.instance else unreachable;
     const superclass: *const data.Class = instance.class.superclass.?;

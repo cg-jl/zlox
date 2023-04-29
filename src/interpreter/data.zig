@@ -122,8 +122,7 @@ pub const Class = struct {
     superclass: ?*Class,
     refcount: usize = 0,
     instance_count: usize = 0,
-    fn call(p: *const anyopaque, i: *Walker, args: []const ast.Expr) Result {
-        const class = @ptrCast(*const Class, @alignCast(@alignOf(Class), p));
+    pub fn call(class: *const Class, i: *Walker, args: []const ast.Expr) Result {
         const instance: *Instance = try i.core.instance_pool.create();
         errdefer i.core.instance_pool.destroy(instance);
         if (class.init_method) |im| {
@@ -140,15 +139,6 @@ pub const Class = struct {
             if (cl.methods.get(name)) |m| return m;
             cl = cl.superclass orelse return null;
         }
-    }
-
-    pub fn getVT(class: *const Class) CallableVT {
-        return CallableVT{
-            .ptr = @ptrCast(*const anyopaque, @alignCast(1, class)),
-            .arity = if (class.init_method) |m| @intCast(u8, m.decl.params.len) else 0,
-            .call = &Class.call,
-            .repr = undefined,
-        };
     }
 };
 pub const Function = struct {
@@ -186,9 +176,7 @@ pub const Function = struct {
         };
     }
 
-    pub fn makeCall(ptr: *const anyopaque, st: *Walker, args: []const ast.Expr) Result {
-        const func = @ptrCast(*const Function, @alignCast(@alignOf(Function), ptr));
-
+    pub fn makeCall(func: *const Function, st: *Walker, args: []const ast.Expr) Result {
         var frame: Frame = undefined;
 
         try func.setupCall(st, args, &frame);
@@ -206,16 +194,6 @@ pub const Function = struct {
         };
 
         return ret_val;
-    }
-
-    pub fn getVT(f: *const Function) CallableVT {
-        return CallableVT{
-            .ptr = @ptrCast(*const anyopaque, f),
-            .arity = @intCast(u8, f.decl.params.len),
-            .call = &makeCall,
-            // TODO: proper formatting using zig's writer API
-            .repr = undefined, // please don't touch it!
-        };
     }
 };
 
