@@ -73,35 +73,35 @@ fn isAtEnd(scn: *const Scanner) bool {
 fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
     const c: u8 = scn.advance();
     switch (c) {
-        '(' => return try tokens.append(scn.tokenFromTy(.LEFT_PAREN)),
-        ')' => return try tokens.append(scn.tokenFromTy(.RIGHT_PAREN)),
-        '{' => return try tokens.append(scn.tokenFromTy(.LEFT_BRACE)),
-        '}' => return try tokens.append(scn.tokenFromTy(.RIGHT_BRACE)),
-        ',' => return try tokens.append(scn.tokenFromTy(.COMMA)),
-        '.' => return try tokens.append(scn.tokenFromTy(.DOT)),
-        '-' => return try tokens.append(scn.tokenFromTy(.MINUS)),
-        '+' => return try tokens.append(scn.tokenFromTy(.PLUS)),
-        ';' => return try tokens.append(scn.tokenFromTy(.SEMICOLON)),
-        '*' => return try tokens.append(scn.tokenFromTy(.STAR)),
-        '!' => return try tokens.append(scn.tokenFromTy(
+        '(' => return tokens.append(scn.tokenFromTy(.LEFT_PAREN)),
+        ')' => return tokens.append(scn.tokenFromTy(.RIGHT_PAREN)),
+        '{' => return tokens.append(scn.tokenFromTy(.LEFT_BRACE)),
+        '}' => return tokens.append(scn.tokenFromTy(.RIGHT_BRACE)),
+        ',' => return tokens.append(scn.tokenFromTy(.COMMA)),
+        '.' => return tokens.append(scn.tokenFromTy(.DOT)),
+        '-' => return tokens.append(scn.tokenFromTy(.MINUS)),
+        '+' => return tokens.append(scn.tokenFromTy(.PLUS)),
+        ';' => return tokens.append(scn.tokenFromTy(.SEMICOLON)),
+        '*' => return tokens.append(scn.tokenFromTy(.STAR)),
+        '!' => return tokens.append(scn.tokenFromTy(
             if (scn.match('='))
                 .BANG_EQUAL
             else
                 .BANG,
         )),
-        '=' => return try tokens.append(scn.tokenFromTy(
+        '=' => return tokens.append(scn.tokenFromTy(
             if (scn.match('='))
                 .EQUAL_EQUAL
             else
                 .EQUAL,
         )),
-        '<' => return try tokens.append(scn.tokenFromTy(
+        '<' => return tokens.append(scn.tokenFromTy(
             if (scn.match('='))
                 .LESS_EQUAL
             else
                 .LESS,
         )),
-        '>' => return try tokens.append(scn.tokenFromTy(
+        '>' => return tokens.append(scn.tokenFromTy(
             if (scn.match('='))
                 .GREATER_EQUAL
             else
@@ -112,19 +112,19 @@ fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
                 scn.current += 1;
                 while (!scn.isAtEnd() and scn.peek() != '\n') scn.current += 1;
             } else {
-                return try tokens.append(scn.tokenFromTy(.SLASH));
+                return tokens.append(scn.tokenFromTy(.SLASH));
             }
         },
         ' ', '\r', '\t' => {},
         '\n' => {
             scn.advanceLine();
         },
-        '"' => return try scn.string(tokens),
+        '"' => return scn.string(tokens),
         else => {
             if (std.ascii.isDigit(c)) {
-                return try scn.number(tokens);
+                return scn.number(tokens);
             } else if (isIdentStart(c)) {
-                return try scn.identifier(tokens);
+                return scn.identifier(tokens);
             } else {
                 scn.report("Unexpected character");
             }

@@ -96,8 +96,8 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
         .@"if" => |i| {
             const iff: ast.Stmt.If = i;
             const cond = try state.visitExpr(iff.condition);
-            if (Core.isTruthy(cond)) return try state.visitStmt(iff.then_branch.*);
-            if (iff.else_branch) |b| return try state.visitStmt(b.*);
+            if (Core.isTruthy(cond)) return state.visitStmt(iff.then_branch.*);
+            if (iff.else_branch) |b| return state.visitStmt(b.*);
         },
         .@"return" => |r| {
             const ret: ast.Stmt.Return = r;
@@ -195,7 +195,7 @@ pub inline fn executeBlock(state: *Walker, block: []const ast.Stmt) data.VoidRes
 
 pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
     switch (e) {
-        .binary => |b| return try state.visitBinary(b),
+        .binary => |b| return state.visitBinary(b),
         .literal => |l| return Core.literalToValue(l),
         .unary => |u| {
             const un: ast.Expr.Unary = u;
@@ -271,12 +271,12 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
         .super => |s| {
             const super: ast.Expr.Super = s;
             const this = state.lookupVariable(super.keyword);
-            return try state.core.superGet(this, super.method);
+            return state.core.superGet(this, super.method);
         },
         .get => |g| {
             const get: ast.Expr.Get = g;
             const this = try state.visitExpr(get.obj.*);
-            return try state.core.instanceGet(this, get.name);
+            return state.core.instanceGet(this, get.name);
         },
         .set => |s| {
             const set: ast.Expr.Set = s;

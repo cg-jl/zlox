@@ -54,19 +54,19 @@ pub fn tryDeclaration(p: *Parser) AllocErr!?ast.Stmt {
 
 fn declaration(p: *Parser) AllocOrSignal!ast.Stmt {
     switch (p.advance().ty) {
-        .CLASS => return try p.classDecl(),
+        .CLASS => return p.classDecl(),
         .FUN => {
             if (p.check(.LEFT_PAREN)) {
                 p.current -= 1;
-                return try p.exprStmt(); // will re-match on 'fun'
+                return p.exprStmt(); // will re-match on 'fun'
             } else {
                 return ast.Stmt{ .function = try p.function("function") };
             }
         },
-        .VAR => return try p.varDecl(),
+        .VAR => return p.varDecl(),
         else => {
             p.current -= 1;
-            return try p.statement();
+            return p.statement();
         },
     }
 }
@@ -106,7 +106,7 @@ fn statement(p: *Parser) AllocOrSignal!ast.Stmt {
         .WHILE => try p.whileStmt(),
         else => {
             p.current -= 1;
-            return try p.exprStmt();
+            return p.exprStmt();
         },
     };
 }
@@ -271,7 +271,7 @@ pub fn tryExpression(p: *Parser) AllocErr!?ast.Expr {
 }
 
 inline fn expression(p: *Parser) !ast.Expr {
-    return try p.assignment();
+    return p.assignment();
 }
 
 fn assignment(p: *Parser) AllocOrSignal!ast.Expr {
@@ -361,7 +361,7 @@ fn unary(p: *Parser) !ast.Expr {
         return ast.Expr.unary(operator, try p.builder.expandLifetime(right));
     }
 
-    return try p.call();
+    return p.call();
 }
 
 fn call(p: *Parser) !ast.Expr {
@@ -411,7 +411,7 @@ fn primary(p: *Parser) AllocOrSignal!ast.Expr {
         },
         .THIS => return ast.Expr.this(p.prev()),
         .FALSE, .TRUE, .NIL, .NUMBER, .STRING => return ast.Expr.literal(p.prev()),
-        .FUN => return try p.lambda(p.prev()),
+        .FUN => return p.lambda(p.prev()),
         .IDENTIFIER => return ast.Expr.@"var"(p.prev()),
         .LEFT_PAREN => {
             const inner = try p.expression();
