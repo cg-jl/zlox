@@ -233,11 +233,7 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
                         &state.core,             func.decl.params.len,
                         call_info.arguments.len, call_info.paren,
                     });
-                    return try @call(.always_inline, data.Function.makeCall, .{
-                        func,
-                        state,
-                        call_info.arguments,
-                    });
+                    return state.makeCall(func, call_info.arguments);
                 },
                 .class => |cl| {
                     const cp: *const data.Class = cl;
@@ -246,9 +242,17 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
                         &state.core,     arity, call_info.arguments.len,
                         call_info.paren,
                     });
-                    return try @call(.always_inline, data.Class.call, .{
-                        cp, state, call_info.arguments,
-                    });
+
+                    const instance: *data.Instance = try state.core.instance_pool.create();
+                    errdefer state.core.instance_pool.destroy(instance);
+
+                    if (cl.init_method) |m| {
+                        const bound = try state.core.bind(m, instance);
+                        defer state.core.unbind(bound);
+                        try state.makeInitCall(&bound, call_info.arguments);
+                    }
+
+                    return .{ .instance = instance };
                 },
                 .builtin_clock => {
                     try @call(.always_inline, Core.checkCallArgCount, .{
@@ -289,4 +293,66 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
 inline fn lookupVariable(state: *Walker, v: Token) data.Value {
     const distance: data.Depth = state.locals.get(local(v)).?;
     return state.core.valueAt(distance).*;
+}
+
+inline fn setupCall(
+    st: *Walker,
+    func: *const data.Function,
+    args: []const ast.Expr,
+    frame: *Frame,
+) data.AllocOrSignal!void {
+    try st.core.values.ensureUnusedCapacity(st.core.arena.allocator(), args.len);
+    for (args) |a| {
+        st.core.values.appendAssumeCapacity(try st.visitExpr(a));
+    }
+
+    st.core.pushFrame(frame);
+
+    // Make sure that the ancestor calls point to the correct environment.
+    st.core.current_env.enclosing = func.closure;
+    // Make sure that the arguments are popped too.
+    // We don't create the frame before the arguments are evaluated
+    // because then we introduce a new scope where it shouldn't be.
+    st.core.current_env.values_begin -= args.len;
+}
+
+fn makeInitCall(
+    st: *Walker,
+    func: *const data.Function,
+    args: []const ast.Expr,
+) data.VoidResult {
+    var frame: Frame = undefined;
+    try st.setupCall(func, args, &frame);
+    defer st.core.restoreFrame(frame);
+
+    st.executeBlock(func.decl.body) catch |err| {
+        if (err != error.Return) return err;
+        if (st.core.ret_val) |*r| {
+            r.dispose(&st.core);
+        }
+        st.core.ret_val = null;
+    };
+}
+pub fn makeCall(
+    st: *Walker,
+    func: *const data.Function,
+    args: []const ast.Expr,
+) data.Result {
+    var frame: Frame = undefined;
+
+    try st.setupCall(func, args, &frame);
+    defer st.core.restoreFrame(frame);
+
+    const ret_val: data.Value = catchReturn: {
+        st.executeBlock(func.decl.body) catch |err| {
+            if (err == error.Return) {
+                const ret = st.core.ret_val orelse data.Value.nil();
+                st.core.ret_val = null;
+                break :catchReturn ret;
+            } else return err;
+        };
+        break :catchReturn data.Value.nil();
+    };
+
+    return ret_val;
 }

@@ -122,16 +122,6 @@ pub const Class = struct {
     superclass: ?*Class,
     refcount: usize = 0,
     instance_count: usize = 0,
-    pub fn call(class: *const Class, i: *Walker, args: []const ast.Expr) Result {
-        const instance: *Instance = try i.core.instance_pool.create();
-        errdefer i.core.instance_pool.destroy(instance);
-        if (class.init_method) |im| {
-            const bound = try i.core.bind(im, instance);
-            defer i.core.unbind(bound);
-            try bound.makeInitCall(i, args);
-        }
-        return Value{ .instance = instance };
-    }
 
     pub fn findMethod(class: *const Class, name: []const u8) ?Function {
         var cl = class;
@@ -145,56 +135,6 @@ pub const Function = struct {
     decl: ast.FuncDecl,
     closure: *const Frame,
     refcount: usize = 0,
-
-    inline fn setupCall(func: *const Function, st: *Walker, args: []const ast.Expr, frame: *Frame) AllocOrSignal!void {
-        try st.core.values.ensureUnusedCapacity(st.core.arena.allocator(), args.len);
-        for (args) |a| {
-            st.core.values.appendAssumeCapacity(try st.visitExpr(a));
-        }
-
-        st.core.pushFrame(frame);
-
-        // Make sure that the ancestor calls point to the correct environment.
-        st.core.current_env.enclosing = func.closure;
-        // Make sure that the arguments are popped too.
-        // We don't create the frame before the arguments are evaluated
-        // because then we introduce a new scope where it shouldn't be.
-        st.core.current_env.values_begin -= args.len;
-    }
-
-    fn makeInitCall(func: *const Function, st: *Walker, args: []const ast.Expr) VoidResult {
-        var frame: Frame = undefined;
-        try func.setupCall(st, args, &frame);
-        defer st.core.restoreFrame(frame);
-
-        st.executeBlock(func.decl.body) catch |err| {
-            if (err != error.Return) return err;
-            if (st.core.ret_val) |*r| {
-                r.dispose(&st.core);
-            }
-            st.core.ret_val = null;
-        };
-    }
-
-    pub fn makeCall(func: *const Function, st: *Walker, args: []const ast.Expr) Result {
-        var frame: Frame = undefined;
-
-        try func.setupCall(st, args, &frame);
-        defer st.core.restoreFrame(frame);
-
-        const ret_val: Value = catchReturn: {
-            st.executeBlock(func.decl.body) catch |err| {
-                if (err == error.Return) {
-                    const ret = st.core.ret_val orelse Value.nil();
-                    st.core.ret_val = null;
-                    break :catchReturn ret;
-                } else return err;
-            };
-            break :catchReturn Value.nil();
-        };
-
-        return ret_val;
-    }
 };
 
 pub const Signal = error{ RuntimeError, Return };
