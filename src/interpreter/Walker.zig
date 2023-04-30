@@ -35,7 +35,7 @@ inline fn visitBinary(state: *Walker, b: ast.Expr.Binary) data.Result {
     const left = try state.visitExpr(b.left.*);
     const right = try state.visitExpr(b.right.*);
 
-    return state.core.visitBinary(left, right, b.operator);
+    return state.core.endBinary(left, right, b.operator);
 }
 
 pub fn tryPrintExpr(state: *Walker, e: ast.Expr) std.mem.Allocator.Error!void {
@@ -103,7 +103,7 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
         .@"if" => |i| {
             const iff: ast.Stmt.If = i;
             const cond = try state.visitExpr(iff.condition);
-            if (isTruthy(cond)) return try state.visitStmt(iff.then_branch.*);
+            if (Core.isTruthy(cond)) return try state.visitStmt(iff.then_branch.*);
             if (iff.else_branch) |b| return try state.visitStmt(b.*);
         },
         .@"return" => |r| {
@@ -125,7 +125,7 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
             const wh: ast.Stmt.While = w;
             while (true) {
                 const cond = try state.visitExpr(wh.condition);
-                if (!isTruthy(cond)) break;
+                if (!Core.isTruthy(cond)) break;
                 try state.visitStmt(wh.body.*);
             }
         },
@@ -217,17 +217,7 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
         .unary => |u| {
             const un: ast.Expr.Unary = u;
             const right = try state.visitExpr(un.right.*);
-            switch (un.operator.ty) {
-                .BANG => return .{ .boolean = !isTruthy(right) },
-                .MINUS => switch (right) {
-                    .num => |n| return .{ .num = -n },
-                    else => {
-                        state.core.ctx.report(un.operator, "Operand must be a number");
-                        return error.RuntimeError;
-                    },
-                },
-                else => unreachable,
-            }
+            return state.core.endUnary(right, un.operator);
         },
         .@"var" => |v| return state.lookupVariable(v),
         .lambda => |l| {
@@ -245,8 +235,7 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
             value.addRef();
 
             const distance: data.Depth = state.locals.get(local(assign.name)).?;
-            const ancestor = state.core.current_env.ancestor(distance.env);
-            state.core.values.items[ancestor.values_begin..][distance.stack] = value;
+            state.core.valueAt(distance).* = value;
 
             return value;
         },
@@ -317,15 +306,5 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
 
 inline fn lookupVariable(state: *Walker, v: Token) data.Value {
     const distance: data.Depth = state.locals.get(local(v)).?;
-    const frame = state.core.current_env.ancestor(distance.env);
-    const value: data.Value = state.core.values.items[frame.values_begin..][distance.stack];
-    return value;
-}
-
-inline fn isTruthy(obj: data.Value) bool {
-    return switch (obj) {
-        .nil => false,
-        .boolean => |b| b,
-        else => true,
-    };
+    return state.core.valueAt(distance).*;
 }

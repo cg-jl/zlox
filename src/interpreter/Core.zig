@@ -132,7 +132,37 @@ pub inline fn checkCallArgCount(
     }
 }
 
-pub inline fn visitBinary(
+pub inline fn valueAt(core: *Core, depth: data.Depth) *data.Value {
+    const frame = core.current_env.ancestor(depth.env);
+    return &core.values.items[frame.values_begin..][depth.stack];
+}
+
+pub inline fn endUnary(
+    core: *Core,
+    right: data.Value,
+    op: Token,
+) data.Result {
+    switch (op.ty) {
+        .BANG => return .{ .boolean = !isTruthy(right) },
+        .MINUS => switch (right) {
+            .num => |n| return .{ .num = -n },
+            else => {
+                core.ctx.report(op, "Operand must be a number");
+                return error.RuntimeError;
+            },
+        },
+        else => unreachable,
+    }
+}
+pub inline fn isTruthy(obj: data.Value) bool {
+    return switch (obj) {
+        .nil => false,
+        .boolean => |b| b,
+        else => true,
+    };
+}
+
+pub inline fn endBinary(
     core: *Core,
     left: data.Value,
     right: data.Value,
