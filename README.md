@@ -157,4 +157,5 @@ Around 37 us. Around the average
 ```
 
 About ~36~ 32s. An 11% improvement, by removing a layer of cache indirection.
-The cumulative improvement is of **79%** (relative to be36de134e4b64949a6483a41a0c27ff8dda5b1d)
+The cumulative improvement is of **79%**, relative to [the first working
+implementation](https://github.com/cybergsus/zlox/tree/be36de134e4b64949a6483a41a0c27ff8dda5b1d)
