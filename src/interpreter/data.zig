@@ -29,11 +29,11 @@ pub const Value = union(enum(u3)) {
     string: FatStr,
     num: f64,
     boolean: bool,
-    callable: CallableVT,
     func: Function,
     class: *Class,
     instance: *Instance,
     nil: void,
+    builtin_clock: void,
 
     pub fn addRef(self: *Value) void {
         switch (self.*) {
@@ -104,7 +104,7 @@ pub const Value = union(enum(u3)) {
             // TODO: make endsWith(".0") cut
             .num => |n| try writer.print("{}", .{n}),
             .boolean => |b| try writer.print("{}", .{b}),
-            .callable => |f| try writer.print("{s}", .{f.repr}),
+            .builtin_clock => try writer.print("<native fn 'clock'>", .{}),
             .func => |f| try writer.print("{s}", .{if (f.decl.name) |n| n.lexeme else "lambda"}),
             .class => |c| try writer.print("{s}", .{c.name}),
             .instance => |i| try writer.print("{s} instance", .{i.class.name}),
@@ -195,15 +195,6 @@ pub const Function = struct {
 
         return ret_val;
     }
-};
-
-// TODO: we already know what we can call. This only serves as a wrapper for native fns,
-// and as a "common interface". Consider making this VT static over type?
-pub const CallableVT = struct {
-    ptr: *const anyopaque,
-    arity: u8, // cannot be > 255
-    repr: []const u8,
-    call: *const fn (*const anyopaque, *Walker, []const ast.Expr) Result,
 };
 
 pub const Signal = error{ RuntimeError, Return };

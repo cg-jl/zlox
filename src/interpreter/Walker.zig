@@ -19,14 +19,7 @@ locals: Resolver.LocalMap,
 
 pub fn initCore(gpa: std.mem.Allocator) !Walker {
     var core = try Core.init(gpa, 1);
-    core.values.appendAssumeCapacity(
-        .{ .callable = data.CallableVT{
-            .ptr = undefined,
-            .repr = "<native fn clock()>",
-            .call = &getClock,
-            .arity = 0,
-        } },
-    );
+    core.values.appendAssumeCapacity(.{ .builtin_clock = {} });
 
     return Walker{ .core = core, .locals = undefined };
 }
@@ -193,11 +186,6 @@ pub fn visitStmt(state: *Walker, st: ast.Stmt) data.VoidResult {
     }
 }
 
-fn getClock(_: *const anyopaque, state: *Walker, _: []const ast.Expr) data.Result {
-    const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
-    const value = @intToFloat(f64, state.core.timer.read());
-    return .{ .num = value / conversion };
-}
 /// Execute a block without pushing a frame
 pub inline fn executeBlock(state: *Walker, block: []const ast.Stmt) data.VoidResult {
     for (block) |s| {
@@ -262,13 +250,12 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
                         cp, state, call_info.arguments,
                     });
                 },
-                .callable => |v| {
-                    const vt: data.CallableVT = v;
+                .builtin_clock => {
                     try @call(.always_inline, Core.checkCallArgCount, .{
-                        &state.core,     vt.arity, call_info.arguments.len,
+                        &state.core,     0, call_info.arguments.len,
                         call_info.paren,
                     });
-                    return try vt.call(vt.ptr, state, call_info.arguments);
+                    return state.core.getClock();
                 },
                 else => {
                     state.core.ctx.report(call_info.paren, "Can only call native fns, classes or functions");

@@ -294,3 +294,8 @@ pub inline fn literalToValue(l: Token.TaggedLiteral) data.Value {
         .nil => .{ .nil = {} },
     };
 }
+pub inline fn getClock(core: *Core) data.Result {
+    const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
+    const value = @intToFloat(f64, core.timer.read());
+    return .{ .num = value / conversion };
+}
