@@ -11,15 +11,16 @@ pub fn clear() void {
     has_errored = false;
 }
 
-pub fn reportToken(token: Token, comptime message: []const u8) void {
+pub fn reportToken(token: Token, message: []const u8) void {
     setErrored();
     if (token.ty == .EOF) {
-        std.log.err("{}:{}: Error at end: " ++ message, .{ token.line, token.col });
+        std.log.err("{}:{}: Error at end: {s}", .{ token.line, token.col, message });
     } else {
-        std.log.err("{}:{} Error at '{s}': " ++ message, .{
+        std.log.err("{}:{} Error at '{s}': {s}", .{
             token.line,
             token.col,
             token.lexeme,
+            message,
         });
     }
 }

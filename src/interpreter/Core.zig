@@ -294,8 +294,16 @@ pub inline fn literalToValue(l: Token.TaggedLiteral) data.Value {
         .nil => .{ .nil = {} },
     };
 }
-pub inline fn getClock(core: *Core) data.Result {
+pub inline fn getClock(core: *Core) data.Value {
     const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
     const value = @intToFloat(f64, core.timer.read());
     return .{ .num = value / conversion };
+}
+
+pub inline fn takeReturn(core: *Core) data.Value {
+    if (core.ret_val) |v| {
+        core.ret_val = null;
+        return v;
+    }
+    return data.Value.nil();
 }

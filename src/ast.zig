@@ -10,8 +10,9 @@
 
 const std = @import("std");
 const Token = @import("Token.zig");
-pub const Builder = @import("ast/Builder.zig");
+pub const Builder = @import("ast/NodeBuilder.zig");
 pub const Printer = @import("ast/Printer.zig");
+pub const Ast = @import("ast/Ast.zig");
 
 pub const Expr = union(enum(u4)) {
     binary: Binary,

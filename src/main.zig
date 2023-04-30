@@ -2,9 +2,9 @@ const std = @import("std");
 const Context = @import("context.zig");
 const Scanner = @import("Scanner.zig");
 const Token = @import("Token.zig");
-const Resolver = @import("interpreter/Resolver.zig");
-const Walker = @import("interpreter/Walker.zig");
-const Parser = @import("Parser.zig");
+const Resolver = @import("interpreter/NodeResolver.zig");
+const Walker = @import("interpreter/NodeWalker.zig");
+const Parser = @import("NodeParser.zig");
 const ast = @import("ast.zig");
 
 pub fn main() !u8 {
@@ -43,33 +43,43 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     defer tokens.deinit();
     try Scanner.scan(&tokens, mem);
     if (Context.has_errored) return;
-    var builder = ast.Builder.init(gpa);
-    defer builder.deinit();
+    var builder = ast.Builder{ .alloc = gpa };
+    defer {
+        builder.extra_data.deinit(builder.alloc);
+        builder.node_list.deinit(builder.alloc);
+        builder.annotated_tokens.deinit(builder.alloc);
+    }
     // use an arena for all the strings, so we can free them
     // all at once. Better allocator for this?
     var str_alloc = std.heap.ArenaAllocator.init(gpa);
     defer str_alloc.deinit();
-    var parser = Parser.init(tokens.items, &builder, str_alloc.allocator());
-    var stmts = std.ArrayList(ast.Stmt).init(gpa);
-    defer stmts.deinit();
-    try parser.parse(&stmts);
+    var parser = Parser{
+        .tokens = tokens.items,
+        .builder = &builder,
+        .temp_node_allocator = gpa,
+    };
+    var root = std.ArrayList(ast.Ast.Index).init(gpa);
+    defer root.deinit();
+    const parsed_ast = try parser.parse(&root);
     if (Context.has_errored) return;
 
-    var state = try Walker.initCore(gpa);
+    var state = try Walker.initCore(gpa, parsed_ast);
     defer state.core.deinit();
 
     // Make sure to free resolver's memory
     {
         var resolver = try Resolver.init(gpa);
         defer resolver.deinit();
-        try resolver.resolveBlock(stmts.items);
+        for (root.items) |i| try resolver.resolveNode(i);
         state.locals = resolver.locals.unmanaged;
     }
     defer state.locals.deinit(gpa);
 
+    state.ast = parsed_ast;
+
     if (Context.has_errored) return;
 
-    try state.tryExecBlock(stmts.items);
+    try state.tryVisitBlock(root.items);
 }
 
 fn runPrompt(gpa: std.mem.Allocator) !void {
@@ -85,9 +95,9 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
 
     _ = std.io.getStdOut().writer().write("> ") catch {};
 
-    var builder = ast.Builder.init(gpa);
     var gp_arena = std.heap.ArenaAllocator.init(gpa);
-    var state = try Walker.initCore(gpa);
+    var builder = ast.Builder{ .alloc = gp_arena.allocator() };
+    var state = try Walker.initCore(gpa, undefined);
     defer state.core.deinit();
 
     var resolver = try Resolver.init(gpa);
@@ -127,27 +137,26 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
         }
         if (Context.has_errored) continue;
 
-        defer _ = builder.arena.reset(.retain_capacity);
         defer _ = gp_arena.reset(.retain_capacity);
-        var parser = Parser.init(tokens.items, &builder, gp_arena.allocator());
+        var parser = Parser{
+            .tokens = tokens.items,
+            .builder = &builder,
+            .temp_node_allocator = gp_arena.allocator(),
+        };
 
-        if (hasStatementShit(tokens.items)) {
-            var stmts = std.ArrayList(ast.Stmt).init(gp_arena.allocator());
-            try parser.parse(&stmts);
-            if (Context.has_errored) continue;
-            try resolver.resolveBlock(stmts.items);
-            if (Context.has_errored) continue;
-            state.locals = resolver.locals.unmanaged;
-            try state.tryExecBlock(stmts.items);
-        } else {
-            const expr = try parser.tryExpression();
-            if (expr) |e| {
-                try resolver.resolveExpr(e);
-                if (Context.has_errored) continue;
-                state.locals = resolver.locals.unmanaged;
-                try state.tryPrintExpr(e);
-            }
+        const stmt = try parser.tryDeclaration() orelse continue;
+        defer {
+            parser.builder.extra_data.clearRetainingCapacity();
+            parser.builder.annotated_tokens.clearRetainingCapacity();
+            parser.builder.node_list.len = 0;
         }
+        const parsed_ast = parser.ast();
+        resolver.ast = parsed_ast;
+        try resolver.resolveNode(stmt);
+        if (Context.has_errored) continue;
+
+        state.locals = resolver.locals.unmanaged;
+        state.ast = parsed_ast;
     }
 }
 
