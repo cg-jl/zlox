@@ -132,6 +132,90 @@ pub inline fn checkCallArgCount(
     }
 }
 
+pub inline fn visitBinary(
+    core: *Core,
+    left: data.Value,
+    right: data.Value,
+    op: Token,
+) data.Result {
+    switch (op.ty) {
+        .MINUS => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .num = checked.left - checked.right };
+        },
+        .SLASH => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .num = checked.left / checked.right };
+        },
+        .STAR => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .num = checked.left * checked.right };
+        },
+        .PLUS => {
+            switch (left) {
+                .num => |ln| switch (right) {
+                    .num => |rn| return .{ .num = ln + rn },
+                    else => {},
+                },
+                .string => |ls| switch (right) {
+                    .string => |rs| return .{
+                        .string = .{
+                            .string = try std.fmt.allocPrint(
+                                core.ctx.ally(),
+                                "{s}{s}",
+                                .{ ls.string, rs.string },
+                            ),
+                            .alloc_refcount = 0,
+                        },
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+
+            core.ctx.report(op, "Operands must be two numbers or two strings");
+            return error.RuntimeError;
+        },
+        .GREATER => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .boolean = checked.left > checked.right };
+        },
+        .GREATER_EQUAL => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .boolean = checked.left >= checked.right };
+        },
+        .LESS => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .boolean = checked.left < checked.right };
+        },
+        .LESS_EQUAL => {
+            const checked = try core.checkNumberOperands(op, left, right);
+            return .{ .boolean = checked.left <= checked.right };
+        },
+
+        // unknown op
+        else => unreachable,
+    }
+}
+fn checkNumberOperands(
+    core: *Core,
+    op: Token,
+    left: data.Value,
+    right: data.Value,
+) data.Signal!struct { left: f64, right: f64 } {
+    switch (left) {
+        .num => |ln| {
+            switch (right) {
+                .num => |rn| return .{ .left = ln, .right = rn },
+                else => {},
+            }
+        },
+        else => {},
+    }
+    core.ctx.report(op, "Operands must be numbers");
+    return error.RuntimeError;
+}
+
 pub inline fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
     const instance = if (this == .instance) this.instance else unreachable;
     const superclass: *const data.Class = instance.class.superclass.?;

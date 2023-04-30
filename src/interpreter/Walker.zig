@@ -35,84 +35,9 @@ inline fn visitBinary(state: *Walker, b: ast.Expr.Binary) data.Result {
     const left = try state.visitExpr(b.left.*);
     const right = try state.visitExpr(b.right.*);
 
-    switch (b.operator.ty) {
-        .MINUS => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .num = checked.left - checked.right };
-        },
-        .SLASH => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .num = checked.left / checked.right };
-        },
-        .STAR => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .num = checked.left * checked.right };
-        },
-        .PLUS => {
-            switch (left) {
-                .num => |ln| switch (right) {
-                    .num => |rn| return .{ .num = ln + rn },
-                    else => {},
-                },
-                .string => |ls| switch (right) {
-                    .string => |rs| return .{
-                        .string = .{
-                            .string = try std.fmt.allocPrint(
-                                state.core.ctx.ally(),
-                                "{s}{s}",
-                                .{ ls.string, rs.string },
-                            ),
-                            .alloc_refcount = 0,
-                        },
-                    },
-                    else => {},
-                },
-                else => {},
-            }
-
-            state.core.ctx.report(b.operator, "Operands must be two numbers or two strings");
-            return error.RuntimeError;
-        },
-        .GREATER => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .boolean = checked.left > checked.right };
-        },
-        .GREATER_EQUAL => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .boolean = checked.left >= checked.right };
-        },
-        .LESS => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .boolean = checked.left < checked.right };
-        },
-        .LESS_EQUAL => {
-            const checked = try state.checkNumberOperands(b.operator, left, right);
-            return .{ .boolean = checked.left <= checked.right };
-        },
-
-        // unknown op
-        else => unreachable,
-    }
+    return state.core.visitBinary(left, right, b.operator);
 }
 
-fn checkNumberOperands(
-    state: *Walker,
-    op: Token,
-    left: data.Value,
-    right: data.Value,
-) data.Signal!struct { left: f64, right: f64 } {
-    switch (left) {
-        .num => |ln| {
-            switch (right) {
-                .num => |rn| return .{ .left = ln, .right = rn },
-                else => {},
-            }
-        },
-        else => {},
-    }
-    state.core.ctx.report(op, "Operands must be numbers");
-    return error.RuntimeError;
-}
 pub fn tryPrintExpr(state: *Walker, e: ast.Expr) std.mem.Allocator.Error!void {
     const v = state.visitExpr(e) catch |err| {
         switch (err) {
