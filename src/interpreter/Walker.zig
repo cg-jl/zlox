@@ -208,12 +208,7 @@ pub inline fn executeBlock(state: *Walker, block: []const ast.Stmt) data.VoidRes
 pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
     switch (e) {
         .binary => |b| return try state.visitBinary(b),
-        .literal => |l| return switch (l) {
-            .string => |s| .{ .string = .{ .string = s, .alloc_refcount = null } },
-            .num => |n| .{ .num = n },
-            .boolean => |b| .{ .boolean = b },
-            .nil => .{ .nil = {} },
-        },
+        .literal => |l| return Core.literalToValue(l),
         .unary => |u| {
             const un: ast.Expr.Unary = u;
             const right = try state.visitExpr(un.right.*);

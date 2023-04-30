@@ -285,3 +285,12 @@ pub fn bind(
         .closure = env,
     };
 }
+
+pub inline fn literalToValue(l: Token.TaggedLiteral) data.Value {
+    return switch (l) {
+        .string => |s| .{ .string = .{ .string = s, .alloc_refcount = null } },
+        .num => |n| .{ .num = n },
+        .boolean => |b| .{ .boolean = b },
+        .nil => .{ .nil = {} },
+    };
+}
