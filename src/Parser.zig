@@ -57,7 +57,7 @@ fn declaration(p: *Parser) AllocOrSignal!ast.Stmt {
         .CLASS => return try p.classDecl(),
         .FUN => {
             if (p.check(.LEFT_PAREN)) {
-                p.current -= 2;
+                p.current -= 1;
                 return try p.exprStmt(); // will re-match on 'fun'
             } else {
                 return ast.Stmt{ .function = try p.function("function") };
@@ -287,7 +287,7 @@ fn assignment(p: *Parser) AllocOrSignal!ast.Expr {
 
 fn logicOr(p: *Parser) !ast.Expr {
     var expr = try p.logicAnd();
-    while (p.match(.AND)) |op| {
+    while (p.match(.OR)) |op| {
         const right = try p.logicAnd();
         expr = try binary(p.builder, expr, op, right);
     }
