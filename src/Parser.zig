@@ -112,10 +112,14 @@ fn statement(p: *Parser) AllocOrSignal!ast.Stmt {
 }
 
 fn lambda(p: *Parser, kw: Token) !ast.Expr {
-    return ast.Expr.lambda(kw, try p.funcDecl("lambda", null));
+    return ast.Expr.lambda(try p.funcDecl("lambda", kw));
 }
 
-fn funcDecl(p: *Parser, comptime kind: []const u8, name: ?Token) !ast.FuncDecl {
+fn funcDecl(
+    p: *Parser,
+    comptime kind: []const u8,
+    name: Token,
+) !ast.FuncDecl {
     _ = try p.consume(.LEFT_PAREN, "Expected '(' after " ++ kind ++ " name");
     var params = ast.Builder.List(Token).init(p.builder);
     errdefer params.drop();

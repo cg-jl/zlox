@@ -204,11 +204,11 @@ pub fn visitExpr(state: *Walker, e: ast.Expr) data.Result {
         },
         .@"var" => |v| return state.lookupVariable(v),
         .lambda => |l| {
-            const lambda: ast.Expr.Lambda = l;
+            const lambda: ast.FuncDecl = l;
             const frame: *Frame = try state.core.env_pool.create();
             frame.* = state.core.current_env;
             return .{ .func = data.Function{
-                .decl = lambda.decl,
+                .decl = lambda,
                 .closure = frame,
             } };
         },

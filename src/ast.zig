@@ -19,7 +19,7 @@ pub const Expr = union(enum(u4)) {
     literal: Literal,
     unary: Unary,
     @"var": Expr.Var,
-    lambda: Lambda,
+    lambda: FuncDecl,
     assign: Assign,
     call: Call,
     this: Token,
@@ -61,8 +61,8 @@ pub const Expr = union(enum(u4)) {
         return .{ .grouping = e };
     }
 
-    pub fn lambda(keyword: Token, decl: FuncDecl) Expr {
-        return .{ .lambda = Expr.Lambda{ .keyword = keyword, .decl = decl } };
+    pub fn lambda(decl: FuncDecl) Expr {
+        return .{ .lambda = decl };
     }
 
     pub fn assign(name: Token, value: *const Expr) Expr {
@@ -131,11 +131,6 @@ pub const Expr = union(enum(u4)) {
     pub const Assign = struct {
         name: Token,
         value: *const Expr,
-    };
-
-    pub const Lambda = struct {
-        keyword: Token,
-        decl: FuncDecl,
     };
 
     pub const Binary = struct {
@@ -250,7 +245,7 @@ pub const Stmt = union(enum(u4)) {
     }
 };
 pub const FuncDecl = struct {
-    name: ?Token,
+    name: Token,
     params: []const Token,
     body: []const Stmt,
 };

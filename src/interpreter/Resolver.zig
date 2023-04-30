@@ -195,8 +195,8 @@ fn resolveVar(r: *Resolver, name: ast.Expr.Var) Result {
     try r.resolveLocal(name);
 }
 
-fn resolveLambda(r: *Resolver, l: ast.Expr.Lambda) Result {
-    try r.resolveFuncDecl(l.decl, .function);
+inline fn resolveLambda(r: *Resolver, l: ast.FuncDecl) Result {
+    return r.resolveFuncDecl(l, .function);
 }
 
 fn resolveFuncDecl(r: *Resolver, func: ast.FuncDecl, ty: FuncType) Result {
