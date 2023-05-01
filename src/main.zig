@@ -5,7 +5,8 @@ const Token = @import("Token.zig");
 const Resolver = @import("interpreter/NodeResolver.zig");
 const Walker = @import("interpreter/NodeWalker.zig");
 const Parser = @import("NodeParser.zig");
-const ast = @import("ast.zig");
+const Builder = @import("ast/NodeBuilder.zig");
+const Ast = @import("ast/Ast.zig");
 
 pub fn main() !u8 {
     if (std.os.argv.len > 2) {
@@ -43,7 +44,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     defer tokens.deinit();
     try Scanner.scan(&tokens, mem);
     if (Context.has_errored) return;
-    var builder = ast.Builder{ .alloc = gpa };
+    var builder = Builder{ .alloc = gpa };
     defer {
         builder.extra_data.deinit(builder.alloc);
         builder.node_list.deinit(builder.alloc);
@@ -58,7 +59,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
         .builder = &builder,
         .temp_node_allocator = gpa,
     };
-    var root = std.ArrayList(ast.Ast.Index).init(gpa);
+    var root = std.ArrayList(Ast.Index).init(gpa);
     defer root.deinit();
     const parsed_ast = try parser.parse(&root);
     if (Context.has_errored) return;
@@ -97,7 +98,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     _ = std.io.getStdOut().writer().write("> ") catch {};
 
     var gp_arena = std.heap.ArenaAllocator.init(gpa);
-    var builder = ast.Builder{ .alloc = gp_arena.allocator() };
+    var builder = Builder{ .alloc = gp_arena.allocator() };
     var state = try Walker.initCore(gpa, undefined);
     defer state.core.deinit();
 

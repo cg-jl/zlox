@@ -1,12 +1,11 @@
 const std = @import("std");
 const data = @import("data.zig");
 const Frame = @import("Frame.zig");
-const ast = @import("../ast.zig");
 const context = @import("../context.zig");
 const Ctx = @import("Ctx.zig");
 const Token = @import("../Token.zig");
 const AllocErr = std.mem.Allocator.Error;
-const Resolver = @import("Resolver.zig");
+const Resolver = @import("NodeResolver.zig");
 
 const Depth = data.Depth;
 const local = Resolver.local;
