@@ -2,6 +2,7 @@ import subprocess
 import numpy as np
 import sys
 from multiprocessing import Pool
+from tqdm import tqdm
 
 usage = ('usage: bench.py [-c <count>] <.lox script>')
 
@@ -37,9 +38,19 @@ def bench(_):
                                  stderr=subprocess.PIPE).communicate()
     return float(stderr.split()[1])
 
-with Pool() as p:
-    all_values = np.fromiter(p.imap_unordered(bench, range(count)), dtype=np.float64)
-    avg = np.sum(all_values) / count
-    variance = np.sum(np.square(all_values - avg)) / count
+def reject_outliers(data, m=2.):
+    d = np.abs(data - np.median(data))
+    mdev = np.median(d)
+    s = d/mdev if mdev else np.zero(len(d))
+    return data[s < m]
 
-print(f"μ = {avg} σ² = {variance}")
+with Pool(1) as p:
+    print(f'[info] Running {script} {count} times and collecting results...')
+    x = np.fromiter(tqdm(p.imap_unordered(bench, range(count)),total=count), dtype=np.float64)
+    print('[info] Run ended, computing statistics')
+    x = reject_outliers(x)
+    avg = np.mean(x)
+    stddev = np.std(x)
+    median = np.median(x)
+
+print(f"μ = {avg} σ = {stddev} η = {median}")
