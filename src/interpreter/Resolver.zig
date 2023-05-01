@@ -261,10 +261,15 @@ fn resolveName(r: *Resolver, name: []const u8, use_local: Local) data.AllocErr!b
     return while (i > 0) : (i -= 1) {
         const scope: *const Scope = &r.scopes.items[i - 1];
         if (scope.get(name)) |info| {
-            try r.locals.put(use_local, .{
+            const depth = data.Depth{
                 .env = r.scopes.items.len - i,
                 .stack = info.stack_index,
-            });
+            };
+            std.log.debug(
+                "resolved '{s}' ({}:{}) => {}",
+                .{ name, use_local.line, use_local.col, depth },
+            );
+            try r.locals.put(use_local, depth);
             break true;
         }
     } else false;

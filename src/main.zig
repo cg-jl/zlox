@@ -69,6 +69,7 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
     // Make sure to free resolver's memory
     {
         var resolver = try Resolver.init(gpa);
+        resolver.ast = parsed_ast;
         defer resolver.deinit();
         for (root.items) |i| try resolver.resolveNode(i);
         state.locals = resolver.locals.unmanaged;
@@ -144,7 +145,7 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
             .temp_node_allocator = gp_arena.allocator(),
         };
 
-        const stmt = try parser.tryDeclaration() orelse continue;
+        const stmt = try parser.tryDeclaration(false) orelse continue;
         defer {
             parser.builder.extra_data.clearRetainingCapacity();
             parser.builder.annotated_tokens.clearRetainingCapacity();

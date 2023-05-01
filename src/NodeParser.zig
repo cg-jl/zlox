@@ -26,7 +26,7 @@ pub inline fn ast(p: *const NodeParser) Ast {
     return Ast{
         .extra_data = p.builder.extra_data.items,
         .nodes = p.builder.node_list.slice(),
-        .tokens = p.tokens,
+        .tokens = p.builder.annotated_tokens.items,
     };
 }
 
@@ -37,7 +37,7 @@ pub fn parse(p: *NodeParser, root: *std.ArrayList(Ast.Index)) AllocErr!Ast {
         // I'll rethink it. If so, I also have to distinguish the 'semicolon'
         // problem, where semicolons are enforced when the parser knows exactly
         // where it is.
-        const decl = try p.tryDeclaration();
+        const decl = try p.tryDeclaration(true);
         if (decl) |ind| {
             try root.append(ind);
         }
@@ -46,8 +46,8 @@ pub fn parse(p: *NodeParser, root: *std.ArrayList(Ast.Index)) AllocErr!Ast {
     return p.ast();
 }
 
-pub fn tryDeclaration(p: *NodeParser) AllocErr!?Ast.Index {
-    return p.declaration(false) catch |err| {
+pub fn tryDeclaration(p: *NodeParser, comptime required_semicolon: bool) AllocErr!?Ast.Index {
+    return p.declaration(required_semicolon) catch |err| {
         if (err == error.ParseError) {
             p.synchronize();
             return null;
@@ -311,9 +311,15 @@ inline fn expression(p: *NodeParser) AnyErr!Ast.Index {
 }
 
 fn assignment(p: *NodeParser) AnyErr!Ast.Index {
-    const expr = try p.logicOr();
+    var expr = try p.logicOr();
+
     if (p.match(.EQUAL)) |equals| {
+        // we have to do this dance of popping and then reinserting,
+        // so that we guarantee that the last parsed expr is our modified
+        // one.
+        const expr_node = p.builder.node_list.pop();
         const value = try p.logicOr();
+        expr = try p.builder.node(expr_node);
         const slices = p.builder.node_list.slice();
         const new_node = switch (slices.items(.tag)[expr]) {
             .fetchVar => fetchVar: {

@@ -1,46 +1,85 @@
-const ast = @import("../ast.zig");
+const Ast = @import("Ast.zig");
 const std = @import("std");
+const Token = @import("../Token.zig");
 
 const Printer = @This();
 
 indent_level: usize = 0,
+ast: Ast,
 
-const expr_vt = ast.Expr.VisitorVTable(void, Printer){
-    .visitBinary = printBinary,
-    .visitLiteral = printLiteral,
-    .visitUnary = printUnary,
-    .visitVar = printVar,
-    .visitLambda = printLambda,
-    .visitAssign = printAssign,
-    .visitCall = printCall,
-    .visitThis = printThis,
-    .visitSuper = printSuper,
-    .visitGet = printGet,
-    .visitSet = printSet,
-};
+pub fn printNode(p: *Printer, node_index: Ast.Index) void {
+    const tag = p.ast.nodes.items(.tag)[node_index];
+    switch (tag) {
+        .print => p.printPrint(p.ast.unpack(Ast.Print, node_index)),
+        .ret => p.printReturn(p.ast.unpack(Ast.Return, node_index)),
+        .naked_ret => p.printReturn(null),
+        .init_var_decl => {
+            const info = p.ast.unpack(Ast.InitVarDecl, node_index);
+            p.printVarSt(info.name, info.init);
+        },
+        .naked_var_decl => p.printVarSt(
+            p.ast.unpack(Ast.NakedVarDecl, node_index),
+            null,
+        ),
+        .naked_while => p.printWhile(
+            null,
+            p.ast.unpack(Ast.NakedWhile, node_index),
+        ),
+        .@"while" => {
+            const info = p.ast.unpack(Ast.While, node_index);
+            p.printWhile(info.cond, info.body);
+        },
+        .block => p.printBlock(p.ast.unpack(Ast.Block, node_index)),
+        .single_class => {
+            const info = p.ast.unpack(Ast.SingleClass, node_index);
+            p.printClass(info.name, info.methods, null);
+        },
+        .class => {
+            const info = p.ast.unpack(Ast.FullClass, node_index);
+            p.printClass(info.name, info.methods, info.superclass);
+        },
+        .if_simple => {
+            const info = p.ast.unpack(Ast.IfSimple, node_index);
+            p.printIf(info.cond, info.then_branch, null);
+        },
+        .@"if" => {
+            const info = p.ast.unpack(Ast.FullIf, node_index);
+            p.printIf(info.cond, info.then_branch, info.else_branch);
+        },
+        .function => p.printFunction(p.ast.unpack(Ast.Function, node_index)),
+        .set => p.printSet(p.ast.unpack(Ast.Set, node_index)),
+        .get => p.printGet(p.ast.unpack(Ast.Get, node_index)),
+        .super => std.debug.print("Super.{s}\n", .{
+            p.ast.unpack(Ast.Super, node_index).lexeme,
+        }),
+        .this => std.debug.print("This\n", .{}),
+        .call => p.printCall(p.ast.unpack(Ast.Call, node_index)),
+        .assign => p.printAssign(p.ast.unpack(Ast.Assign, node_index)),
+        .lambda => p.printLambda(p.ast.unpack(Ast.Function, node_index)),
+        .fetchVar => p.printVar(p.ast.unpack(Ast.FetchVar, node_index)),
+        .unary => p.printUnary(p.ast.unpack(Ast.Unary, node_index)),
+        .literal => p.printLiteral(
+            p.ast.unpack(Ast.Literal, node_index).extractLiteral(),
+        ),
+        .binary => p.printBinary(p.ast.unpack(Ast.Binary, node_index)),
+    }
+}
 
-const stmt_vt = ast.Stmt.VisitorVTable(void, Printer){
-    .visitExpr = printExpr,
-    .visitFunction = printFunction,
-    .visitIf = printIf,
-    .visitReturn = printReturn,
-    .visitPrint = printPrint,
-    .visitVar = printVarSt,
-    .visitWhile = printWhile,
-    .visitBlock = printBlock,
-    .visitClass = printClass,
-};
-
-fn printClass(p: *Printer, class: ast.Stmt.Class) void {
+fn printClass(
+    p: *Printer,
+    name: Token,
+    methods: Ast.SliceIndex,
+    superclass: ?Token,
+) void {
     std.debug.print("Class:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
-    std.debug.print("name = {s}\n", .{class.name.lexeme});
+    std.debug.print("name = {s}\n", .{name.lexeme});
     p.makeIndent();
-    if (class.methods.len == 0) {
+    if (methods.len() == 0) {
         std.debug.print("(no methods)\n", .{});
     } else {
         std.debug.print("methods:\n", .{});
@@ -49,20 +88,21 @@ fn printClass(p: *Printer, class: ast.Stmt.Class) void {
 
         p.indent_level += 1;
 
-        for (class.methods) |m| {
+        for (methods.start..methods.end) |i| {
             p.makeIndent();
-            p.printFunction(m);
+            std.debug.assert(p.ast.nodes.items(.tag)[i] == .function);
+            p.printFunction(p.ast.unpack(Ast.Function, i));
         }
     }
 
-    if (class.superclass) |s| {
+    if (superclass) |s| {
         p.makeIndent();
         std.debug.print("superclass = {s}\n", .{s.lexeme});
     }
 }
 
-fn printBlock(p: *Printer, body: []const ast.Stmt) void {
-    if (body.len == 0) {
+fn printBlock(p: *Printer, body: Ast.SliceIndex) void {
+    if (body.len() == 0) {
         std.debug.print("Empty Block\n", .{});
         return;
     }
@@ -72,61 +112,78 @@ fn printBlock(p: *Printer, body: []const ast.Stmt) void {
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
-    for (body) |st| {
+    for (body.start..body.end) |st| {
         p.makeIndent();
-        p.printStmt(st);
+        p.printNode(@intCast(Ast.Index, st));
     }
 }
 
-fn printWhile(p: *Printer, wh: ast.Stmt.While) void {
+fn printWhile(
+    p: *Printer,
+    cond: ?Ast.Index,
+    body: Ast.Index,
+) void {
     std.debug.print("While:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
-    p.makeIndent();
-    std.debug.print("condition = ", .{});
-    p.printExpr(wh.condition);
+    if (cond) |condition| {
+        p.makeIndent();
+        std.debug.print("condition = ", .{});
+        p.printNode(condition);
+    }
     p.makeIndent();
     std.debug.print("body = ", .{});
-    p.printStmt(wh.body.*);
+    p.printNode(body);
 }
 
-fn printVarSt(p: *Printer, v: ast.Stmt.Var) void {
+fn printVarSt(
+    p: *Printer,
+    name: Token,
+    init: ?Ast.Index,
+) void {
     std.debug.print("VarDecl:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
-    std.debug.print("name = {s}\n", .{v.name.lexeme});
-    if (v.init) |init| {
+    std.debug.print("name = {s}\n", .{name.lexeme});
+    if (init) |init_node| {
         p.makeIndent();
         std.debug.print("init = ", .{});
-        p.printExpr(init);
+        p.printNode(init_node);
     }
 }
 
-fn printPrint(p: *Printer, pr: ast.Stmt.Print) void {
+fn printPrint(p: *Printer, pr: Ast.Index) void {
     std.debug.print("Print: ", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
-    p.printExpr(pr);
+    p.printNode(pr);
 }
 
-fn printReturn(p: *Printer, ret: ast.Stmt.Return) void {
+fn printReturn(p: *Printer, ret: ?Ast.Index) void {
     std.debug.print("Return:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
-    p.indent_level += 1;
-    p.makeIndent();
-    p.printExpr(ret.value);
+    if (ret) |value| {
+        p.indent_level += 1;
+        p.makeIndent();
+        p.printNode(value);
+    }
 }
 
-fn printIf(p: *Printer, iff: ast.Stmt.If) void {
+fn printIf(
+    p: *Printer,
+    cond: Ast.Index,
+    then_branch: Ast.Index,
+    else_branch: ?Ast.Index,
+) void {
     std.debug.print("If:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -134,18 +191,18 @@ fn printIf(p: *Printer, iff: ast.Stmt.If) void {
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("condition = ", .{});
-    p.printExpr(iff.condition);
+    p.printNode(cond);
     p.makeIndent();
     std.debug.print("then_branch = ", .{});
-    p.printStmt(iff.then_branch.*);
-    if (iff.else_branch) |else_branch| {
+    p.printNode(then_branch);
+    if (else_branch) |else_branch_index| {
         p.makeIndent();
         std.debug.print("else_branch = ", .{});
-        p.printStmt(else_branch.*);
+        p.printNode(else_branch_index);
     }
 }
 
-fn printFunction(p: *Printer, func: ast.Stmt.Function) void {
+fn printFunction(p: *Printer, func: Ast.Function) void {
     std.debug.print("Function:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -158,7 +215,7 @@ fn printFunction(p: *Printer, func: ast.Stmt.Function) void {
     p.printFuncDecl(func.decl);
 }
 
-fn printSet(p: *Printer, set: ast.Expr.Set) void {
+fn printSet(p: *Printer, set: Ast.Set) void {
     std.debug.print("Set:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -166,15 +223,15 @@ fn printSet(p: *Printer, set: ast.Expr.Set) void {
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
-    p.printExpr(set.obj.*);
+    p.printNode(set.obj);
     p.makeIndent();
     std.debug.print("name: {s}\n", .{set.name.lexeme});
     p.makeIndent();
     std.debug.print("value: ", .{});
-    p.printExpr(set.value.*);
+    p.printNode(set.value);
 }
 
-fn printGet(p: *Printer, get: ast.Expr.Get) void {
+fn printGet(p: *Printer, get: Ast.Get) void {
     std.debug.print("Get:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -182,20 +239,12 @@ fn printGet(p: *Printer, get: ast.Expr.Get) void {
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("obj: ", .{});
-    p.printExpr(get.obj.*);
+    p.printNode(get.obj);
     p.makeIndent();
     std.debug.print("name: {s}\n", .{get.name.lexeme});
 }
 
-fn printSuper(_: *Printer, super: ast.Expr.Super) void {
-    std.debug.print("Super{s}\n", .{super.method.lexeme});
-}
-
-fn printThis(_: *Printer, _: ast.Expr.Var) void {
-    std.debug.print("This\n", .{});
-}
-
-fn printCall(p: *Printer, call: ast.Expr.Call) void {
+fn printCall(p: *Printer, call: Ast.Call) void {
     std.debug.print("Call:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -203,22 +252,22 @@ fn printCall(p: *Printer, call: ast.Expr.Call) void {
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("callee: ", .{});
-    p.printExpr(call.callee.*);
-    if (call.arguments.len != 0) {
+    p.printNode(call.callee);
+    if (call.params.len() != 0) {
         p.makeIndent();
         std.debug.print("arguments:\n", .{});
         const pre_arg_ident = p.indent_level;
         defer p.indent_level = pre_arg_ident;
 
         p.indent_level += 1;
-        for (call.arguments) |arg| {
+        for (call.params.start..call.params.end) |arg| {
             p.makeIndent();
-            p.printExpr(arg);
+            p.printNode(@intCast(Ast.Index, arg));
         }
     }
 }
 
-fn printAssign(p: *Printer, assign: ast.Expr.Assign) void {
+fn printAssign(p: *Printer, assign: Ast.Assign) void {
     std.debug.print("Assign:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -228,39 +277,39 @@ fn printAssign(p: *Printer, assign: ast.Expr.Assign) void {
     std.debug.print("name: {s}\n", .{assign.name.lexeme});
     p.makeIndent();
     std.debug.print("value: ", .{});
-    p.printExpr(assign.value.*);
+    p.printNode(assign.rhs);
 }
 
-fn printLambda(p: *Printer, v: ast.Expr.Lambda) void {
+fn printLambda(p: *Printer, v: Ast.Function) void {
     std.debug.print("Lambda: ", .{});
     p.printFuncDecl(v.decl);
 }
 
-fn printVar(_: *Printer, v: ast.Expr.Var) void {
+fn printVar(_: *Printer, v: Token) void {
     std.debug.print("Var({s})\n", .{v.lexeme});
 }
 
-fn printUnary(p: *Printer, u: ast.Expr.Unary) void {
+fn printUnary(p: *Printer, u: Ast.Unary) void {
     std.debug.print("Unary:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
 
     p.indent_level += 1;
     p.makeIndent();
-    std.debug.print("op: {s}\n", .{u.operator.lexeme});
+    std.debug.print("op: {s}\n", .{u.op.lexeme});
     p.makeIndent();
     std.debug.print("right: ", .{});
-    p.printExpr(u.right.*);
+    p.printNode(u.rhs);
 }
 
-fn printLiteral(_: *Printer, t: ast.Expr.Literal) void {
+fn printLiteral(_: *Printer, t: Token.TaggedLiteral) void {
     switch (t) {
         .string => |s| std.debug.print("Literal(\"{s}\")\n", .{s}),
         else => std.debug.print("Literal({})\n", .{t}),
     }
 }
 
-fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
+fn printBinary(p: *Printer, b: Ast.Binary) void {
     std.debug.print("Binary:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
@@ -268,20 +317,12 @@ fn printBinary(p: *Printer, b: ast.Expr.Binary) void {
     p.indent_level += 1;
     p.makeIndent();
     std.debug.print("left: ", .{});
-    p.printExpr(b.left.*);
+    p.printNode(b.lhs);
     p.makeIndent();
-    std.debug.print("op: {s}\n", .{b.operator.lexeme});
+    std.debug.print("op: {s}\n", .{b.op.lexeme});
     p.makeIndent();
     std.debug.print("right: ", .{});
-    p.printExpr(b.right.*);
-}
-
-pub fn printExpr(p: *Printer, e: ast.Expr) void {
-    e.accept(void, Printer, expr_vt, p);
-}
-
-pub fn printStmt(p: *Printer, stmt: ast.Stmt) void {
-    stmt.accept(void, Printer, stmt_vt, p);
+    p.printNode(b.rhs);
 }
 
 fn makeIndent(p: *const Printer) void {
@@ -291,23 +332,17 @@ fn makeIndent(p: *const Printer) void {
     }
 }
 
-fn printFuncDecl(p: *Printer, decl: ast.FuncDecl) void {
+fn printFuncDecl(p: *Printer, decl: Ast.Node.FuncDecl) void {
     std.debug.print("FuncDecl:\n", .{});
     const current_ident = p.indent_level;
     defer p.indent_level = current_ident;
     p.indent_level += 1;
     p.makeIndent();
-    if (decl.name) |name| {
-        std.debug.print("name = \"{s}\"\n", .{name.lexeme});
-    } else {
-        std.debug.print("(unnamed)\n", .{});
-    }
-    p.makeIndent();
     std.debug.print("params: [", .{});
-    if (decl.params.len > 0) {
-        std.debug.print("{s}", .{decl.params[0].lexeme});
-        for (decl.params[1..]) |param| {
-            std.debug.print(" {s}", .{param.lexeme});
+    if (decl.params.len() > 0) {
+        std.debug.print("{s}", .{p.ast.tokens[decl.params.start].lexeme});
+        for (decl.params.start + 1..decl.params.end) |param| {
+            std.debug.print(" {s}", .{p.ast.tokens[param].lexeme});
         }
     }
     std.debug.print("]\n", .{});

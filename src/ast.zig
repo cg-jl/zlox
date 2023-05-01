@@ -251,12 +251,14 @@ pub const FuncDecl = struct {
     body: []const Stmt,
 };
 
-pub fn printExpr(e: Expr) void {
-    var printer = Printer{};
-    printer.printExpr(e);
+pub fn printNode(ast: Ast, index: Ast.Index) void {
+    var printer = Printer{.ast = ast};
+    printer.printNode(index);
 }
 
-pub fn printStmt(e: Stmt) void {
-    var printer = Printer{};
-    printer.printStmt(e);
+pub fn printRoot(ast: Ast, nodes: []const Ast.Index) void {
+    var printer = Printer{.ast = ast};
+    for (nodes) |i| {
+        printer.printNode(i);
+    }
 }

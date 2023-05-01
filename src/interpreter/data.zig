@@ -132,7 +132,7 @@ pub const Class = struct {
     }
 };
 pub const Function = struct {
-    decl: ast.Ast.Node.FuncDecl,
+    decl: ast.Ast.Function,
     closure: *const Frame,
     refcount: usize = 0,
 };

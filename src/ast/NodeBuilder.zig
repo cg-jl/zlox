@@ -207,8 +207,6 @@ pub inline fn get(
 }
 
 pub inline fn super(b: *NodeBuilder, method: Token) Error!Ast.Index {
-    const method_index = @intCast(Ast.Index, b.annotated_tokens.items.len);
-    try b.annotateToken(method);
     return b.node(.{
         .tag = .super,
         .token = method,
@@ -288,7 +286,7 @@ pub inline fn unary(b: *NodeBuilder, op: Token, rhs: Ast.Index) Error!Ast.Index 
     });
 }
 
-inline fn node(b: *NodeBuilder, n: Ast.Node) Error!Ast.Index {
+pub inline fn node(b: *NodeBuilder, n: Ast.Node) Error!Ast.Index {
     const index = b.node_list.len;
     try b.node_list.append(b.alloc, n);
     return @truncate(Ast.Index, index);

@@ -20,12 +20,15 @@ pub const SliceIndex = struct {
 
 pub fn extraData(tree: Ast, comptime T: type, index: usize) T {
     var result: T = undefined;
-    const fields = std.meta.fields(T);
+    const fields = comptime std.meta.fields(T);
     var i: usize = 0;
     inline for (fields) |f| {
         const field: std.builtin.Type.StructField = f;
         if (field.type == SliceIndex) {
-            @field(result, field.name) = tree.extraData(index + i, SliceIndex);
+            @field(result, field.name) = SliceIndex{
+                .start = tree.extra_data[index + i],
+                .end = tree.extra_data[index + i + 1],
+            };
             i += 2;
         } else {
             comptime std.debug.assert(field.type == Index);
@@ -33,6 +36,7 @@ pub fn extraData(tree: Ast, comptime T: type, index: usize) T {
             i += 1;
         }
     }
+    return result;
 }
 
 pub const Node = struct {
@@ -74,6 +78,7 @@ pub const Node = struct {
         init_var_decl, // token == name, rhs == init
         // expr is implicit.
         function, // token == name. rhs == (extra) decl index
+        lambda, // same as function.
         @"if", // token == name, lhs == cond, rhs == (extra) if index
         if_simple, // token == undefined, lhs == cond, rhs == then_index
         naked_while, // token == undefined, rhs == body_index.
@@ -108,7 +113,7 @@ pub const Node = struct {
 pub inline fn unpack(
     tree: Ast,
     comptime T: type,
-    index: Index,
+    index: usize,
 ) T {
     switch (T) {
         Binary => {
@@ -120,6 +125,7 @@ pub inline fn unpack(
                 .op = op,
             };
         },
+        Node.Data => return tree.nodes.items(.data)[index],
         Token => return tree.nodes.items(.token)[index],
         Unary => {
             const data: Node.Data = tree.nodes.items(.data)[index];
@@ -146,10 +152,141 @@ pub inline fn unpack(
             const data: Node.Data = tree.nodes.items(.data)[index];
             return Get{ .name = name, .obj = data.rhs };
         },
+        Set => {
+            const name = tree.nodes.items(.token)[index];
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return Set{
+                .name = name,
+                .obj = data.lhs,
+                .value = data.rhs,
+            };
+        },
+        Ast.Node.FuncDecl => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return tree.extraData(Ast.Node.FuncDecl, data.rhs);
+        },
+        Function => {
+            const name = tree.nodes.items(.token)[index];
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            const func_decl = tree.extraData(Ast.Node.FuncDecl, data.rhs);
+            return Function{ .name = name, .decl = func_decl };
+        },
+
+        FullClass => {
+            const name = tree.nodes.items(.token)[index];
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            const class: Node.Class = tree.extraData(Node.Class, data.rhs);
+            return FullClass{
+                .name = name,
+                .superclass = tree.tokens[class.superclass],
+                .methods = class.methods,
+            };
+        },
+
+        SingleClass => {
+            const name = tree.nodes.items(.token)[index];
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return SingleClass{ .name = name, .methods = data.toRange() };
+        },
+
+        Rhs => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return data.rhs;
+        },
+
+        InitVarDecl => {
+            const name = tree.nodes.items(.token)[index];
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return InitVarDecl{ .name = name, .init = data.rhs };
+        },
+
+        IfSimple => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return IfSimple{ .cond = data.lhs, .then_branch = data.rhs };
+        },
+
+        FullIf => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            const extra: Node.If = tree.extraData(Node.If, data.rhs);
+            return FullIf{
+                .cond = data.lhs,
+                .then_branch = extra.then_index,
+                .else_branch = extra.else_index,
+            };
+        },
+
+        While => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return While{ .cond = data.lhs, .body = data.rhs };
+        },
+
+        Block => {
+            const data: Node.Data = tree.nodes.items(.data)[index];
+            return data.toRange();
+        },
+
+        IndexedToken => return IndexedToken{ .tok = tree.tokens[index] },
 
         else => @compileError(@typeName(T) ++ " not registered how to unpack"),
     }
 }
+
+pub const IndexedToken = struct { tok: Token };
+
+pub const Block = SliceIndex;
+
+pub const While = struct {
+    cond: Index,
+    body: Index,
+};
+
+pub const NakedWhile = Index;
+
+pub const FullIf = struct {
+    cond: Index,
+    then_branch: Index,
+    else_branch: Index,
+};
+
+pub const IfSimple = struct {
+    cond: Index,
+    then_branch: Index,
+};
+
+pub const InitVarDecl = struct {
+    name: Token,
+    init: Index,
+};
+
+pub const NakedVarDecl = Token;
+
+pub const Return = Rhs;
+
+pub const Print = Rhs;
+
+pub const Rhs = Index;
+
+pub const SingleClass = struct {
+    name: Token,
+    methods: SliceIndex,
+};
+
+pub const FullClass = struct {
+    name: Token,
+    superclass: Token,
+    methods: SliceIndex,
+};
+
+pub const Function = struct {
+    name: Token,
+    decl: Node.FuncDecl,
+};
+
+pub const Set = struct {
+    name: Token,
+    obj: Index,
+    value: Index,
+};
 
 pub const Super = Token;
 
