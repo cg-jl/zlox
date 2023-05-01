@@ -1,10 +1,8 @@
 const std = @import("std");
-const ast = @import("../ast.zig");
+const Ast = @import("../ast/Ast.zig");
 const Core = @import("Core.zig");
-const Walker = @import("Walker.zig");
 const Token = @import("../Token.zig");
 const Frame = @import("Frame.zig");
-const Ctx = @import("Ctx.zig");
 pub const Result = AllocOrSignal!Value;
 pub const VoidResult = AllocOrSignal!void;
 
@@ -141,7 +139,7 @@ pub const Class = struct {
     }
 };
 pub const Function = struct {
-    decl: ast.Ast.Node.FuncDecl,
+    decl: Ast.Node.FuncDecl,
     closure: *const Frame,
     refcount: usize = 0,
 };
