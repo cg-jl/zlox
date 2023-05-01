@@ -222,12 +222,17 @@ pub inline fn local(token: Token) Local {
     };
 }
 
-pub const LocalMap = std.HashMapUnmanaged(
-    Local,
-    Depth,
-    LocalContext,
-    std.hash_map.default_max_load_percentage,
-);
+pub fn LocalMap(comptime T: type) type {
+    return std.HashMapUnmanaged(
+        Local,
+        T,
+        LocalContext,
+        std.hash_map.default_max_load_percentage,
+    );
+}
+
+pub const DepthMap = LocalMap(data.Depth);
+
 const LocalContext = struct {
     pub fn eql(_: LocalContext, a: Local, b: Local) bool {
         return @bitCast(Local.U, a) == @bitCast(Local.U, b);
@@ -245,7 +250,7 @@ const FuncType = enum(u2) { none, function, initializer, method };
 const Result = data.AllocErr!void;
 
 ast: Ast = undefined,
-locals: LocalMap.Managed,
+locals: DepthMap.Managed,
 scopes: std.ArrayListUnmanaged(Scope) = .{},
 current_function: FuncType = FuncType.none,
 current_class: ClassType = ClassType.none,
@@ -254,7 +259,7 @@ arena: std.heap.ArenaAllocator,
 pub fn init(alloc: std.mem.Allocator) !NodeResolver {
     var res = NodeResolver{
         .arena = std.heap.ArenaAllocator.init(alloc),
-        .locals = LocalMap.Managed.init(alloc),
+        .locals = DepthMap.Managed.init(alloc),
     };
 
     // global scope

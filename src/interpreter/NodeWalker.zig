@@ -12,7 +12,7 @@ const AllocErr = std.mem.Allocator.Error;
 
 ast: Ast,
 core: Core,
-locals: Resolver.LocalMap,
+locals: Resolver.DepthMap,
 
 pub fn tryPrintNode(w: *NodeWalker, index: Ast.Index) AllocErr!void {
     const value = try w.tryVisitNode(index);
