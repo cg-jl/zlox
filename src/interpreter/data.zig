@@ -105,7 +105,7 @@ pub const Value = union(enum(u3)) {
             .num => |n| try writer.print("{}", .{n}),
             .boolean => |b| try writer.print("{}", .{b}),
             .builtin_clock => try writer.print("<native fn 'clock'>", .{}),
-            .func => |f| try writer.print("{s}", .{f.decl.name.lexeme}),
+            .func => |_| try writer.print("fun", .{}),
             .class => |c| try writer.print("{s}", .{c.name}),
             .instance => |i| try writer.print("{s} instance", .{i.class.name}),
             .nil => try writer.print("nil", .{}),
@@ -132,7 +132,7 @@ pub const Class = struct {
     }
 };
 pub const Function = struct {
-    decl: ast.Ast.Function,
+    decl: ast.Ast.Node.FuncDecl,
     closure: *const Frame,
     refcount: usize = 0,
 };

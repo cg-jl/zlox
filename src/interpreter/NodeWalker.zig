@@ -85,7 +85,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
 
                     if (cl.init_method) |im| {
                         try @call(.always_inline, Core.checkCallArgCount, .{
-                            &w.core,               im.decl.decl.params.len(),
+                            &w.core,               im.decl.params.len(),
                             unpacked.params.len(), unpacked.paren,
                         });
                         const bound = try w.core.bind(im, instance);
@@ -101,7 +101,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
                 },
                 .func => |f| {
                     try @call(.always_inline, Core.checkCallArgCount, .{
-                        &w.core,        f.decl.decl.params.len(), unpacked.params.len(),
+                        &w.core,        f.decl.params.len(), unpacked.params.len(),
                         unpacked.paren,
                     });
 
@@ -137,7 +137,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             return val;
         },
         .lambda => {
-            const decl = w.ast.unpack(Ast.Function, node_index);
+            const decl = w.ast.unpack(Ast.Node.FuncDecl, node_index);
             const frame: *Frame = try w.core.env_pool.create();
             frame.* = w.core.current_env;
             return .{ .func = data.Function{
@@ -216,7 +216,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             return init;
         },
         .function => {
-            const func = w.ast.unpack(Ast.Function, node_index);
+            const func = w.ast.unpack(Ast.Node.FuncDecl, node_index);
             const clone: *Frame = try w.core.env_pool.create();
             clone.* = w.core.current_env;
 
@@ -296,7 +296,7 @@ inline fn buildClass(
             std.debug.assert(w.ast.nodes.items(.tag)[i] == .function);
             const func = w.ast.unpack(Ast.Function, i);
             const method = data.Function{
-                .decl = func,
+                .decl = func.decl,
                 .closure = class_closure,
             };
             const is_init = std.mem.eql(u8, func.name.lexeme, "init");
@@ -337,7 +337,7 @@ inline fn makeInitCall(
     try w.setupCall(func, args, &frame);
     defer w.core.restoreFrame(frame);
 
-    w.executeBlock(func.decl.decl.body) catch |err| {
+    w.executeBlock(func.decl.body) catch |err| {
         if (err != error.Return) return err;
         if (w.core.ret_val) |*r| {
             r.dispose(&w.core);
@@ -355,7 +355,7 @@ fn makeRegularCall(
     try w.setupCall(func, args, &frame);
     defer w.core.restoreFrame(frame);
 
-    w.executeBlock(func.decl.decl.body) catch |err| {
+    w.executeBlock(func.decl.body) catch |err| {
         if (err == error.Return) {
             return w.core.takeReturn();
         }
