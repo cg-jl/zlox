@@ -23,11 +23,7 @@ temp_node_allocator: std.mem.Allocator,
 // capabilities.
 
 pub inline fn ast(p: *const NodeParser) Ast {
-    return Ast{
-        .extra_data = p.builder.extra_data.items,
-        .nodes = p.builder.node_list.slice(),
-        .tokens = p.builder.annotated_tokens.items,
-    };
+    return p.builder.ast();
 }
 
 pub fn parse(p: *NodeParser, root: *std.ArrayList(Ast.Index)) AllocErr!Ast {

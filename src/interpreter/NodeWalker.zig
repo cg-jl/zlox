@@ -47,10 +47,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             const rhs = try w.visitNode(bin.rhs);
             return w.core.endBinary(lhs, rhs, bin.op);
         },
-        .literal => {
-            const literal: Ast.Literal = w.ast.unpack(Ast.Literal, node_index);
-            return Core.literalToValue(literal.extractLiteral());
-        },
+        .literal => return w.ast.unpack(Ast.Literal, node_index),
         .unary => {
             const unpacked = w.ast.unpack(Ast.Unary, node_index);
             const rhs = try w.visitNode(unpacked.rhs);

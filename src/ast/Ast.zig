@@ -1,10 +1,12 @@
 const Ast = @This();
 const std = @import("std");
 const Token = @import("../Token.zig");
+const interpreter = @import("../interpreter/data.zig");
 
+nodes: NodeList.Slice,
 extra_data: []const Index,
 tokens: []const Token,
-nodes: NodeList.Slice,
+literals: []const interpreter.Value,
 
 pub const NodeList = std.MultiArrayList(Node);
 
@@ -62,7 +64,8 @@ pub const Node = struct {
     // count == 9 + 10 = 19 => u5
     pub const Tag = enum(u5) {
         binary, // lhs, rhs. Token == operator.
-        literal, // token.
+        literal, // token == literal (for debug purposes? location?), lhs ==
+        // literal index.
         unary, // rhs, token == operator.
         fetchVar, // token.
         assign, // token == name, rhs == value
@@ -116,6 +119,10 @@ pub inline fn unpack(
     index: usize,
 ) T {
     switch (T) {
+        Literal => {
+            const lit_index = tree.nodes.items(.data)[index].lhs;
+            return tree.literals[lit_index];
+        },
         Binary => {
             const data: Node.Data = tree.nodes.items(.data)[index];
             const op: Token = tree.nodes.items(.token)[index];
@@ -309,7 +316,7 @@ pub const Binary = struct {
     op: Token,
 };
 
-pub const Literal = Token;
+pub const Literal = interpreter.Value;
 
 pub const Unary = struct {
     op: Token,

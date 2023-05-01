@@ -25,6 +25,15 @@ pub const FatStr = struct {
     string: []const u8,
 };
 
+pub inline fn literalToValue(l: Token.TaggedLiteral) Value {
+    return switch (l) {
+        .string => |s| .{ .string = .{ .string = s, .alloc_refcount = null } },
+        .num => |n| .{ .num = n },
+        .boolean => |b| .{ .boolean = b },
+        .nil => .{ .nil = {} },
+    };
+}
+
 pub const Value = union(enum(u3)) {
     string: FatStr,
     num: f64,

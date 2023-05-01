@@ -4,14 +4,25 @@ const NodeBuilder = @This();
 const Token = @import("../Token.zig");
 const Ast = @import("Ast.zig");
 const std = @import("std");
+const interpreter = @import("../interpreter/data.zig");
 
 extra_data: std.ArrayListUnmanaged(Ast.Index) = .{},
 annotated_tokens: std.ArrayListUnmanaged(Token) = .{},
+literals: std.ArrayListUnmanaged(interpreter.Value) = .{},
 node_list: Ast.NodeList = .{},
 alloc: std.mem.Allocator,
 
 // TODO: consider reversing the node array at the end,
 // having to patch the indices when accessing them (i.e index -> final len - index - 1)
+
+pub inline fn ast(b: *const NodeBuilder) Ast {
+    return Ast{
+        .nodes = b.node_list.slice(),
+        .extra_data = b.extra_data.items,
+        .literals = b.literals.items,
+        .tokens = b.annotated_tokens.items,
+    };
+}
 
 pub fn deinit(b: *NodeBuilder) void {
     b.extra_data.deinit(b.alloc);
@@ -271,10 +282,15 @@ pub inline fn binary(
 }
 
 pub inline fn literal(b: *NodeBuilder, lit_token: Token) Error!Ast.Index {
+    const literal_index = @intCast(Ast.Index, b.literals.items.len);
+    try b.literals.append(
+        b.alloc,
+        interpreter.literalToValue(lit_token.extractLiteral()),
+    );
     return b.node(.{
         .tag = .literal,
         .token = lit_token,
-        .data = undefined,
+        .data = .{ .lhs = literal_index, .rhs = undefined },
     });
 }
 

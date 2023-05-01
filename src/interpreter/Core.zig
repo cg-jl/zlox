@@ -286,14 +286,6 @@ pub fn bind(
     };
 }
 
-pub inline fn literalToValue(l: Token.TaggedLiteral) data.Value {
-    return switch (l) {
-        .string => |s| .{ .string = .{ .string = s, .alloc_refcount = null } },
-        .num => |n| .{ .num = n },
-        .boolean => |b| .{ .boolean = b },
-        .nil => .{ .nil = {} },
-    };
-}
 pub inline fn getClock(core: *Core) data.Value {
     const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
     const value = @intToFloat(f64, core.timer.read());
