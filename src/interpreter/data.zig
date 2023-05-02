@@ -155,7 +155,7 @@ pub const Signal = error{ RuntimeError, Return };
 pub const AllocErr = std.mem.Allocator.Error;
 pub const AllocOrSignal = Signal || std.mem.Allocator.Error;
 pub const Error = struct {
-    token: Token,
+    source: Token.Source,
     message: []const u8,
 };
 

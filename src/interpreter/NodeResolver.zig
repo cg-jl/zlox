@@ -41,7 +41,7 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
                     "Cannot use 'super' in a class with no superclass",
                 );
             } else {
-                std.debug.assert(try r.resolveName("this", local(method)));
+                std.debug.assert(try r.resolveName("this", local(method.source)));
             }
         },
         .this => {
@@ -49,7 +49,7 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
             if (r.current_class == .none) {
                 context.reportSource(this.source, "Cannot use 'this' outside af a class");
             } else {
-                std.debug.assert(try r.resolveName("this", local(this)));
+                std.debug.assert(try r.resolveName("this", local(this.source)));
             }
         },
         .function => {
@@ -215,10 +215,10 @@ const VarInfo = packed struct {
     initialized: bool,
     stack_index: u32,
 };
-pub inline fn local(token: Token) Local {
+pub inline fn local(source: Token.Source) Local {
     return .{
-        .line = token.source.line,
-        .col = token.source.col,
+        .line = source.line,
+        .col = source.col,
     };
 }
 
@@ -329,7 +329,7 @@ fn resolveName(r: *NodeResolver, name: []const u8, use_local: Local) data.AllocE
     } else false;
 }
 fn resolveLocal(r: *NodeResolver, name: Token) data.AllocErr!void {
-    const could_resolve_name = try r.resolveName(name.source.lexeme, local(name));
+    const could_resolve_name = try r.resolveName(name.source.lexeme, local(name.source));
     if (!could_resolve_name)
         context.reportSource(name.source, "Could not resolve variable");
 }

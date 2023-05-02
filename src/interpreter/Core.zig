@@ -82,10 +82,14 @@ pub inline fn restoreFrame(core: *Core, frame: Frame) void {
     core.current_env = frame;
 }
 
-pub inline fn checkInstancePut(storage: *Core, this: data.Value, report_token: Token) data.Signal!*data.Instance {
+pub inline fn checkInstancePut(
+    storage: *Core,
+    this: data.Value,
+    report_source: Token.Source,
+) data.Signal!*data.Instance {
     if (this == .instance) return this.instance;
 
-    storage.ctx.report(report_token, "Only instances have values");
+    storage.ctx.report(report_source, "Only instances have values");
 
     return error.RuntimeError;
 }
@@ -93,26 +97,22 @@ pub inline fn checkInstancePut(storage: *Core, this: data.Value, report_token: T
 pub inline fn instancePut(
     storage: *Core,
     instance: *data.Instance,
-    name: Token,
+    name: []const u8,
     value: data.Value,
 ) AllocErr!void {
-    try instance.fields.put(storage.arena.allocator(), name.source.lexeme, value);
+    try instance.fields.put(storage.arena.allocator(), name, value);
 }
 
-pub fn instanceGet(storage: *Core, this: data.Value, token: Token) Result {
+pub fn instanceGet(storage: *Core, this: data.Value, src: Token.Source) Result {
     const instance: *data.Instance = if (this == .instance) this.instance else {
-        storage.ctx.report(token, "Only instances have properties");
+        storage.ctx.report(src, "Only instances have properties");
         return error.RuntimeError;
     };
-    if (instance.fields.get(token.source.lexeme)) |f| return f;
-    if (instance.class.findMethod(token.source.lexeme)) |m| {
+    if (instance.fields.get(src.lexeme)) |f| return f;
+    if (instance.class.findMethod(src.lexeme)) |m| {
         return .{ .func = try storage.bind(m, instance) };
     }
-    storage.ctx.report(token, try std.fmt.allocPrint(
-        storage.ctx.ally(),
-        "Undefined property '{s}'",
-        .{token.source.lexeme},
-    ));
+    storage.ctx.report(src, "Undefined property");
     return error.RuntimeError;
 }
 
@@ -120,10 +120,10 @@ pub inline fn checkCallArgCount(
     core: *Core,
     expected: usize,
     got: usize,
-    report_token: Token,
+    report_source: Token.Source,
 ) data.AllocOrSignal!void {
     if (expected != got) {
-        core.ctx.report(report_token, try std.fmt.allocPrint(
+        core.ctx.report(report_source, try std.fmt.allocPrint(
             core.ctx.ally(),
             "Expected {} arguments but got {}",
             .{ expected, got },
@@ -136,6 +136,8 @@ pub inline fn valueAt(core: *Core, depth: data.Depth) *data.Value {
     return &core.values.items[frame.values_begin..][depth.stack];
 }
 
+// XXX: now `endUnary` and `endBinary` will pose an obstacle for performance
+// if we want to separate the toknen's source information from its type.
 pub inline fn endUnary(
     core: *Core,
     right: data.Value,
@@ -146,7 +148,7 @@ pub inline fn endUnary(
         .MINUS => switch (right) {
             .num => |n| return .{ .num = -n },
             else => {
-                core.ctx.report(op, "Operand must be a number");
+                core.ctx.report(op.source, "Operand must be a number");
                 return error.RuntimeError;
             },
         },
@@ -169,15 +171,15 @@ pub inline fn endBinary(
 ) data.Result {
     switch (op.ty) {
         .MINUS => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .num = checked.left - checked.right };
         },
         .SLASH => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .num = checked.left / checked.right };
         },
         .STAR => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .num = checked.left * checked.right };
         },
         .PLUS => {
@@ -202,23 +204,23 @@ pub inline fn endBinary(
                 else => {},
             }
 
-            core.ctx.report(op, "Operands must be two numbers or two strings");
+            core.ctx.report(op.source, "Operands must be two numbers or two strings");
             return error.RuntimeError;
         },
         .GREATER => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .boolean = checked.left > checked.right };
         },
         .GREATER_EQUAL => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .boolean = checked.left >= checked.right };
         },
         .LESS => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .boolean = checked.left < checked.right };
         },
         .LESS_EQUAL => {
-            const checked = try core.checkNumberOperands(op, left, right);
+            const checked = try core.checkNumberOperands(op.source, left, right);
             return .{ .boolean = checked.left <= checked.right };
         },
 
@@ -228,7 +230,7 @@ pub inline fn endBinary(
 }
 fn checkNumberOperands(
     core: *Core,
-    op: Token,
+    op: Token.Source,
     left: data.Value,
     right: data.Value,
 ) data.Signal!struct { left: f64, right: f64 } {
@@ -245,15 +247,15 @@ fn checkNumberOperands(
     return error.RuntimeError;
 }
 
-pub inline fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
+pub inline fn superGet(
+    core: *Core,
+    this: data.Value,
+    method_src: Token.Source,
+) Result {
     const instance = if (this == .instance) this.instance else unreachable;
     const superclass: *const data.Class = instance.class.superclass.?;
-    const method: data.Function = superclass.findMethod(method_tok.source.lexeme) orelse {
-        core.ctx.report(method_tok, try std.fmt.allocPrint(
-            core.ctx.ally(),
-            "Undefined property '{s}'",
-            .{method_tok.source.lexeme},
-        ));
+    const method: data.Function = superclass.findMethod(method_src.lexeme) orelse {
+        core.ctx.report(method_src, "Undefined property");
         return error.RuntimeError;
     };
 

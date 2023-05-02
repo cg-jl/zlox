@@ -24,7 +24,7 @@ fn tryVisitNode(w: *NodeWalker, index: Ast.Index) AllocErr!data.Value {
         std.debug.assert(err != error.Return);
         if (err == error.RuntimeError) {
             const last_error = w.core.ctx.last_error.?;
-            context.reportSource(last_error.token.source, last_error.message);
+            context.reportSource(last_error.source, last_error.message);
             return data.Value.nil();
         }
         return @errSetCast(AllocErr, err);
@@ -55,11 +55,13 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
         },
         .fetchVar => {
             const token = w.ast.unpack(Ast.FetchVar, node_index);
-            return w.lookupVariable(token);
+            return w.lookupVariable(token.source);
         },
         .assign => {
             const unpacked = w.ast.unpack(Ast.Assign, node_index);
-            const depth: data.Depth = w.locals.get(Resolver.local(unpacked.name)).?;
+            const depth: data.Depth = w.locals.get(
+                Resolver.local(unpacked.name.source),
+            ).?;
             const valuep = w.core.valueAt(depth);
             var rhs = try w.visitNode(unpacked.rhs);
             rhs.addRef();
@@ -72,7 +74,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             return switch (callee) {
                 .builtin_clock => {
                     try @call(.always_inline, Core.checkCallArgCount, .{
-                        &w.core, 0, unpacked.params.len(), unpacked.paren,
+                        &w.core, 0, unpacked.params.len(), unpacked.paren.source,
                     });
                     return w.core.getClock();
                 },
@@ -83,14 +85,14 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
                     if (cl.init_method) |im| {
                         try @call(.always_inline, Core.checkCallArgCount, .{
                             &w.core,               im.decl.params.len(),
-                            unpacked.params.len(), unpacked.paren,
+                            unpacked.params.len(), unpacked.paren.source,
                         });
                         const bound = try w.core.bind(im, instance);
                         defer w.core.unbind(bound);
                         try w.makeInitCall(bound, unpacked.params);
                     } else {
                         try @call(.always_inline, Core.checkCallArgCount, .{
-                            &w.core, 0, unpacked.params.len(), unpacked.paren,
+                            &w.core, 0, unpacked.params.len(), unpacked.paren.source,
                         });
                     }
 
@@ -98,39 +100,39 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
                 },
                 .func => |f| {
                     try @call(.always_inline, Core.checkCallArgCount, .{
-                        &w.core,        f.decl.params.len(), unpacked.params.len(),
-                        unpacked.paren,
+                        &w.core,               f.decl.params.len(),
+                        unpacked.params.len(), unpacked.paren.source,
                     });
 
                     return w.makeRegularCall(f, unpacked.params);
                 },
                 else => {
-                    w.core.ctx.report(unpacked.paren, "Can only call functions or classes");
+                    w.core.ctx.report(unpacked.paren.source, "Can only call functions or classes");
                     return error.RuntimeError;
                 },
             };
         },
         .this => {
             const this = w.ast.unpack(Ast.This, node_index);
-            return w.lookupVariable(this);
+            return w.lookupVariable(this.source);
         },
         .super => {
             const super = w.ast.unpack(Ast.Super, node_index);
-            const this = w.lookupVariable(super);
-            return w.core.superGet(this, super);
+            const this = w.lookupVariable(super.source);
+            return w.core.superGet(this, super.source);
         },
         .get => {
             const get = w.ast.unpack(Ast.Get, node_index);
             const this = try w.visitNode(get.obj);
-            return w.core.instanceGet(this, get.name);
+            return w.core.instanceGet(this, get.name.source);
         },
         .set => {
             const set = w.ast.unpack(Ast.Set, node_index);
             const this = try w.visitNode(set.obj);
-            const instance = try w.core.checkInstancePut(this, set.name);
+            const instance = try w.core.checkInstancePut(this, set.name.source);
             var val = try w.visitNode(set.value);
             val.addRef();
-            try w.core.instancePut(instance, set.name, val);
+            try w.core.instancePut(instance, set.name.source.lexeme, val);
             return val;
         },
         .lambda => {
@@ -170,9 +172,9 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             errdefer w.core.values.items.len -= 1;
 
             const superclass: *data.Class = buildSuper: {
-                const super = w.lookupVariable(info.superclass);
+                const super = w.lookupVariable(info.superclass.source);
                 const superc: *data.Class = if (super == .class) super.class else {
-                    w.core.ctx.report(info.superclass, "Super class must be a class");
+                    w.core.ctx.report(info.superclass.source, "Super class must be a class");
                     return error.RuntimeError;
                 };
                 superc.refcount += 1;
@@ -314,7 +316,7 @@ inline fn buildClass(
     };
 }
 
-inline fn lookupVariable(w: *NodeWalker, v: Token) data.Value {
+inline fn lookupVariable(w: *NodeWalker, v: Token.Source) data.Value {
     const distance: data.Depth = w.locals.get(Resolver.local(v)).?;
     return w.core.valueAt(distance).*;
 }

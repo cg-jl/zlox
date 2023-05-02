@@ -20,8 +20,8 @@ pub inline fn ally(ctx: *Ctx) std.mem.Allocator {
 
 pub inline fn report(
     ctx: *Ctx,
-    at: Token,
+    at: Token.Source,
     message: []const u8,
 ) void {
-    ctx.last_error = .{ .token = at, .message = message };
+    ctx.last_error = .{ .source = at, .message = message };
 }
