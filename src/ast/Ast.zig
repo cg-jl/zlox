@@ -43,7 +43,8 @@ pub fn extraData(tree: Ast, comptime T: type, index: usize) T {
 
 pub const Node = struct {
     tag: Tag,
-    token: Token,
+    source: Token.Source,
+    token_type: Token.Ty,
     data: Data,
 
     pub const Data = struct {
@@ -125,7 +126,7 @@ pub inline fn unpack(
         },
         Binary => {
             const data: Node.Data = tree.nodes.items(.data)[index];
-            const op: Token = tree.nodes.items(.token)[index];
+            const op: Token.Ty = tree.nodes.items(.token_type)[index];
             return Binary{
                 .lhs = data.lhs,
                 .rhs = data.rhs,
@@ -133,34 +134,33 @@ pub inline fn unpack(
             };
         },
         Node.Data => return tree.nodes.items(.data)[index],
-        Token => return tree.nodes.items(.token)[index],
+        Token.Ty => return tree.nodes.items(.token_type)[index],
+        Token.Source => return tree.nodes.items(.source)[index],
         Unary => {
             const data: Node.Data = tree.nodes.items(.data)[index];
-            const op: Token = tree.nodes.items(.token)[index];
+            const op: Token.Ty = tree.nodes.items(.token_type)[index];
             return Unary{ .op = op, .rhs = data.rhs };
         },
         Assign => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             return Assign{ .name = name, .rhs = data.rhs };
         },
         Call => {
-            const paren = tree.nodes.items(.token)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             const params = tree.extraData(SliceIndex, data.rhs);
             return Call{
-                .paren = paren,
                 .callee = data.lhs,
                 .params = params,
             };
         },
         Get => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             return Get{ .name = name, .obj = data.rhs };
         },
         Set => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             return Set{
                 .name = name,
@@ -173,14 +173,14 @@ pub inline fn unpack(
             return tree.extraData(Ast.Node.FuncDecl, data.rhs);
         },
         Function => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             const func_decl = tree.extraData(Ast.Node.FuncDecl, data.rhs);
             return Function{ .name = name, .decl = func_decl };
         },
 
         FullClass => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             const class: Node.Class = tree.extraData(Node.Class, data.rhs);
             return FullClass{
@@ -191,7 +191,7 @@ pub inline fn unpack(
         },
 
         SingleClass => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             return SingleClass{ .name = name, .methods = data.toRange() };
         },
@@ -202,7 +202,7 @@ pub inline fn unpack(
         },
 
         InitVarDecl => {
-            const name = tree.nodes.items(.token)[index];
+            const name = tree.nodes.items(.source)[index];
             const data: Node.Data = tree.nodes.items(.data)[index];
             return InitVarDecl{ .name = name, .init = data.rhs };
         },
@@ -261,11 +261,11 @@ pub const IfSimple = struct {
 };
 
 pub const InitVarDecl = struct {
-    name: Token,
+    name: Token.Source,
     init: Index,
 };
 
-pub const NakedVarDecl = Token;
+pub const NakedVarDecl = Token.Source;
 
 pub const Return = Rhs;
 
@@ -274,38 +274,37 @@ pub const Print = Rhs;
 pub const Rhs = Index;
 
 pub const SingleClass = struct {
-    name: Token,
+    name: Token.Source,
     methods: SliceIndex,
 };
 
 pub const FullClass = struct {
-    name: Token,
+    name: Token.Source,
     superclass: Token,
     methods: SliceIndex,
 };
 
 pub const Function = struct {
-    name: Token,
+    name: Token.Source,
     decl: Node.FuncDecl,
 };
 
 pub const Set = struct {
-    name: Token,
+    name: Token.Source,
     obj: Index,
     value: Index,
 };
 
-pub const Super = Token;
+pub const Super = Token.Source;
 
-pub const This = Token;
+pub const This = Token.Source;
 
 pub const Get = struct {
-    name: Token,
+    name: Token.Source,
     obj: Index,
 };
 
 pub const Call = struct {
-    paren: Token,
     callee: Index,
     params: SliceIndex,
 };
@@ -313,19 +312,19 @@ pub const Call = struct {
 pub const Binary = struct {
     lhs: Index,
     rhs: Index,
-    op: Token,
+    op: Token.Ty,
 };
 
 pub const Literal = interpreter.Value;
 
 pub const Unary = struct {
-    op: Token,
+    op: Token.Ty,
     rhs: Index,
 };
 
-pub const FetchVar = Token;
+pub const FetchVar = Token.Source;
 
 pub const Assign = struct {
-    name: Token,
+    name: Token.Source,
     rhs: Index,
 };

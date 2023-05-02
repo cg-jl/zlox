@@ -17,10 +17,10 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
         .fetchVar => {
             const fetch_var = r.ast.unpack(Ast.FetchVar, node_index);
             if (r.latestScope()) |scope| {
-                if (scope.get(fetch_var.source.lexeme)) |x| {
+                if (scope.get(fetch_var.lexeme)) |x| {
                     if (!x.initialized) {
                         context.reportSource(
-                            fetch_var.source,
+                            fetch_var,
                             "Cannot read local variable in its own initializer",
                         );
                     }
@@ -32,24 +32,24 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
             const method = r.ast.unpack(Ast.Super, node_index);
             if (r.current_class == .none) {
                 context.reportSource(
-                    method.source,
+                    method,
                     "Cannot use 'super' outside of a class",
                 );
             } else if (r.current_class != .subclass) {
                 context.reportSource(
-                    method.source,
+                    method,
                     "Cannot use 'super' in a class with no superclass",
                 );
             } else {
-                std.debug.assert(try r.resolveName("this", local(method.source)));
+                std.debug.assert(try r.resolveName("this", local(method)));
             }
         },
         .this => {
             const this = r.ast.unpack(Ast.This, node_index);
             if (r.current_class == .none) {
-                context.reportSource(this.source, "Cannot use 'this' outside af a class");
+                context.reportSource(this, "Cannot use 'this' outside af a class");
             } else {
-                std.debug.assert(try r.resolveName("this", local(this.source)));
+                std.debug.assert(try r.resolveName("this", local(this)));
             }
         },
         .function => {
@@ -155,7 +155,7 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
 
 fn resolveClass(
     r: *NodeResolver,
-    name: Token,
+    name: Token.Source,
     methods: Ast.SliceIndex,
     ty: ClassType,
 ) Result {
@@ -172,7 +172,7 @@ fn resolveClass(
     for (methods.start..methods.end) |i| {
         std.debug.assert(r.ast.nodes.items(.tag)[i] == .function);
         const method = r.ast.unpack(Ast.Function, i);
-        const is_init = std.mem.eql(u8, "init", method.name.source.lexeme);
+        const is_init = std.mem.eql(u8, "init", method.name.lexeme);
         const decltype: FuncType = if (is_init) .initializer else .method;
         try r.resolveFuncDecl(method.decl, decltype);
     }
@@ -192,8 +192,8 @@ fn resolveFuncDecl(
 
     for (decl.params.start..decl.params.end) |i| {
         const param = r.ast.unpack(Ast.IndexedToken, i).tok;
-        try r.declare(param);
-        try r.define(param);
+        try r.declare(param.source);
+        try r.define(param.source);
     }
 
     // Do not create a new scope for these. This makes shadowing arguments
@@ -281,15 +281,15 @@ fn endScope(r: *NodeResolver) void {
     env.deinit(r.ally());
 }
 
-fn declare(r: *NodeResolver, name: Token) Result {
+fn declare(r: *NodeResolver, name: Token.Source) Result {
     const scope = r.latestScope().?;
     const get_or_put: Scope.GetOrPutResult = try scope.getOrPut(
         r.ally(),
-        name.source.lexeme,
+        name.lexeme,
     );
     if (get_or_put.found_existing) {
         context.reportSource(
-            name.source,
+            name,
             "Variable with this name already declared in this scope",
         );
     }
@@ -312,8 +312,8 @@ fn latestScope(r: *NodeResolver) ?*Scope {
     return &r.scopes.items[r.scopes.items.len - 1];
 }
 
-inline fn define(r: *NodeResolver, name: Token) AllocErr!void {
-    return r.defineName(name.source.lexeme);
+inline fn define(r: *NodeResolver, name: Token.Source) AllocErr!void {
+    return r.defineName(name.lexeme);
 }
 fn resolveName(r: *NodeResolver, name: []const u8, use_local: Local) data.AllocErr!bool {
     var i: usize = r.scopes.items.len;
@@ -328,10 +328,10 @@ fn resolveName(r: *NodeResolver, name: []const u8, use_local: Local) data.AllocE
         }
     } else false;
 }
-fn resolveLocal(r: *NodeResolver, name: Token) data.AllocErr!void {
-    const could_resolve_name = try r.resolveName(name.source.lexeme, local(name.source));
+fn resolveLocal(r: *NodeResolver, name: Token.Source) data.AllocErr!void {
+    const could_resolve_name = try r.resolveName(name.lexeme, local(name));
     if (!could_resolve_name)
-        context.reportSource(name.source, "Could not resolve variable");
+        context.reportSource(name, "Could not resolve variable");
 }
 
 inline fn ally(r: *NodeResolver) std.mem.Allocator {

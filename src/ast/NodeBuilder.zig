@@ -44,7 +44,7 @@ pub inline fn stampTokenAnnotate(b: *const NodeBuilder) Ast.Index {
 
 pub fn class(
     b: *NodeBuilder,
-    name: Token,
+    name: Token.Source,
     superclass: Token,
     methods: []const Ast.Node,
 ) Error!Ast.Index {
@@ -58,20 +58,22 @@ pub fn class(
     const class_index = try b.writeExtraData(Ast.Node.Class, class_data);
     return b.nodeAssumeCapacity(.{
         .tag = .class,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier,
         .data = .{ .lhs = undefined, .rhs = class_index },
     });
 }
 
 pub inline fn singleClass(
     b: *NodeBuilder,
-    name: Token,
+    name: Token.Source,
     methods: []const Ast.Node,
 ) Error!Ast.Index {
     try b.node_list.ensureUnusedCapacity(b.alloc, methods.len + 1);
     return b.nodeAssumeCapacity(.{
         .tag = .single_class,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier
         .data = Ast.Node.Data.fromRange(b.nodesAssumeCapacity(methods)),
     });
 }
@@ -83,7 +85,8 @@ pub inline fn block(
     try b.node_list.ensureUnusedCapacity(b.alloc, inner.len + 1);
     return b.nodeAssumeCapacity(.{
         .tag = .block,
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = Ast.Node.Data.fromRange(b.nodesAssumeCapacity(inner)),
     });
 }
@@ -91,7 +94,8 @@ pub inline fn block(
 pub inline fn nakedWhile(b: *NodeBuilder, body: Ast.Index) Error!Ast.Index {
     return b.node(.{
         .tag = .naked_while,
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = .{ .rhs = body, .lhs = undefined },
     });
 }
@@ -103,7 +107,8 @@ pub inline fn whileNode(
 ) Error!Ast.Index {
     return b.node(.{
         .tag = .@"while",
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = .{ .lhs = cond, .rhs = body },
     });
 }
@@ -115,7 +120,8 @@ pub inline fn simpleIf(
 ) Error!Ast.Index {
     return b.node(.{
         .tag = .if_simple,
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = .{ .lhs = cond, .rhs = then },
     });
 }
@@ -130,40 +136,44 @@ pub inline fn fullIf(
     const data_index = try b.writeExtraData(Ast.Node.If, data);
     return b.node(.{
         .tag = .@"if",
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = .{ .rhs = data_index, .lhs = cond },
     });
 }
 
 pub inline fn function(
     b: *NodeBuilder,
-    name: Token,
+    name: Token.Source,
     decl: Ast.Node.FuncDecl,
 ) Error!Ast.Index {
     const decl_index = try b.writeExtraData(Ast.Node.FuncDecl, decl);
     return b.node(.{
         .tag = .function,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier
         .data = .{ .rhs = decl_index, .lhs = undefined },
     });
 }
 
 pub inline fn initVarDecl(
     b: *NodeBuilder,
-    name: Token,
+    name: Token.Source,
     init: Ast.Index,
 ) Error!Ast.Index {
     return b.node(.{
         .tag = .init_var_decl,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier
         .data = .{ .rhs = init, .lhs = undefined },
     });
 }
 
-pub inline fn nakedVarDecl(b: *NodeBuilder, name: Token) Error!Ast.Index {
+pub inline fn nakedVarDecl(b: *NodeBuilder, name: Token.Source) Error!Ast.Index {
     return b.node(.{
         .tag = .naked_var_decl,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier
         .data = undefined,
     });
 }
@@ -171,7 +181,8 @@ pub inline fn nakedVarDecl(b: *NodeBuilder, name: Token) Error!Ast.Index {
 pub inline fn nakedRet(b: *NodeBuilder) Error!Ast.Index {
     return b.node(.{
         .tag = .naked_ret,
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = undefined,
     });
 }
@@ -179,7 +190,8 @@ pub inline fn nakedRet(b: *NodeBuilder) Error!Ast.Index {
 pub inline fn ret(b: *NodeBuilder, value: Ast.Index) Error!Ast.Index {
     return b.node(.{
         .tag = .ret,
-        .token = undefined,
+        .source = undefined,
+        .token_type = undefined,
         .data = .{ .rhs = value, .lhs = undefined },
     });
 }
@@ -187,55 +199,60 @@ pub inline fn ret(b: *NodeBuilder, value: Ast.Index) Error!Ast.Index {
 pub inline fn print(b: *NodeBuilder, value: Ast.Index) Error!Ast.Index {
     return b.node(.{
         .tag = .print,
-        .token = undefined, // nothing can error here ;)
+        .source = undefined,
+        .token_type = undefined, // nothing can error here ;)
         // NOTE: could be used for debug info though.
         .data = .{ .rhs = value, .lhs = undefined },
     });
 }
 
 pub inline fn set(
-    name: Token,
+    name: Token.Source,
     obj: Ast.Index,
     value: Ast.Index,
 ) Ast.Node {
     return .{
         .tag = .set,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier.
         .data = .{ .lhs = obj, .rhs = value },
     };
 }
 
 pub inline fn get(
     b: *NodeBuilder,
-    name: Token,
+    name: Token.Source,
     rhs: Ast.Index,
 ) Error!Ast.Index {
     return b.node(.{
         .tag = .get,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier.
         .data = .{ .rhs = rhs, .lhs = undefined },
     });
 }
 
-pub inline fn super(b: *NodeBuilder, method: Token) Error!Ast.Index {
+pub inline fn super(b: *NodeBuilder, method: Token.Source) Error!Ast.Index {
     return b.node(.{
         .tag = .super,
-        .token = method,
+        .source = method,
+        .token_type = undefined, // already known: identifier.
         .data = undefined,
     });
 }
 
-pub inline fn this(b: *NodeBuilder, token: Token) Error!Ast.Index {
+pub inline fn this(b: *NodeBuilder, token: Token.Source) Error!Ast.Index {
     return b.node(.{
         .tag = .this,
-        .token = token,
+        .source = token,
+        .token_type = undefined, // already known: 'this'.
         .data = undefined,
     });
 }
 
 pub inline fn call(
     b: *NodeBuilder,
-    paren: Token,
+    paren: Token.Source,
     callee: Ast.Index,
     params: []const Ast.Node,
 ) Error!Ast.Index {
@@ -244,26 +261,29 @@ pub inline fn call(
     const params_index = try b.writeExtraData(Ast.SliceIndex, params_slice);
     return b.node(.{
         .tag = .call,
-        .token = paren,
+        .source = paren,
+        .token_type = undefined, // already known: identifier.
         .data = .{ .lhs = callee, .rhs = params_index },
     });
 }
 
 pub inline fn assign(
-    name: Token,
+    name: Token.Source,
     value: Ast.Index,
 ) Ast.Node {
     return .{
         .tag = .assign,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier.
         .data = .{ .lhs = undefined, .rhs = value },
     };
 }
 
-pub inline fn fetchVar(b: *NodeBuilder, name: Token) Error!Ast.Index {
+pub inline fn fetchVar(b: *NodeBuilder, name: Token.Source) Error!Ast.Index {
     return b.node(.{
         .tag = .fetchVar,
-        .token = name,
+        .source = name,
+        .token_type = undefined, // already known: identifier.
         .data = undefined,
     });
 }
@@ -276,7 +296,8 @@ pub inline fn binary(
 ) Error!Ast.Index {
     return b.node(.{
         .tag = .binary,
-        .token = op,
+        .token_type = op.ty,
+        .source = op.source,
         .data = .{ .lhs = left, .rhs = right },
     });
 }
@@ -289,7 +310,8 @@ pub inline fn literal(b: *NodeBuilder, lit_token: Token) Error!Ast.Index {
     );
     return b.node(.{
         .tag = .literal,
-        .token = lit_token,
+        .source = lit_token.source,
+        .token_type = undefined, // could be one of the literal tokens. who cares?
         .data = .{ .lhs = literal_index, .rhs = undefined },
     });
 }
@@ -297,7 +319,8 @@ pub inline fn literal(b: *NodeBuilder, lit_token: Token) Error!Ast.Index {
 pub inline fn unary(b: *NodeBuilder, op: Token, rhs: Ast.Index) Error!Ast.Index {
     return b.node(.{
         .tag = .unary,
-        .token = op,
+        .token_type = op.ty,
+        .source = op.source,
         .data = .{ .lhs = undefined, .rhs = rhs },
     });
 }

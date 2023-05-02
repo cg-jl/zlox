@@ -116,44 +116,9 @@ pub fn instanceGet(storage: *Core, this: data.Value, src: Token.Source) Result {
     return error.RuntimeError;
 }
 
-pub inline fn checkCallArgCount(
-    core: *Core,
-    expected: usize,
-    got: usize,
-    report_source: Token.Source,
-) data.AllocOrSignal!void {
-    if (expected != got) {
-        core.ctx.report(report_source, try std.fmt.allocPrint(
-            core.ctx.ally(),
-            "Expected {} arguments but got {}",
-            .{ expected, got },
-        ));
-    }
-}
-
 pub inline fn valueAt(core: *Core, depth: data.Depth) *data.Value {
     const frame = core.current_env.ancestor(depth.env);
     return &core.values.items[frame.values_begin..][depth.stack];
-}
-
-// XXX: now `endUnary` and `endBinary` will pose an obstacle for performance
-// if we want to separate the toknen's source information from its type.
-pub inline fn endUnary(
-    core: *Core,
-    right: data.Value,
-    op: Token,
-) data.Result {
-    switch (op.ty) {
-        .BANG => return .{ .boolean = !isTruthy(right) },
-        .MINUS => switch (right) {
-            .num => |n| return .{ .num = -n },
-            else => {
-                core.ctx.report(op.source, "Operand must be a number");
-                return error.RuntimeError;
-            },
-        },
-        else => unreachable,
-    }
 }
 pub inline fn isTruthy(obj: data.Value) bool {
     return switch (obj) {
@@ -163,88 +128,17 @@ pub inline fn isTruthy(obj: data.Value) bool {
     };
 }
 
-pub inline fn endBinary(
-    core: *Core,
-    left: data.Value,
-    right: data.Value,
-    op: Token,
-) data.Result {
-    switch (op.ty) {
-        .MINUS => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .num = checked.left - checked.right };
-        },
-        .SLASH => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .num = checked.left / checked.right };
-        },
-        .STAR => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .num = checked.left * checked.right };
-        },
-        .PLUS => {
-            switch (left) {
-                .num => |ln| switch (right) {
-                    .num => |rn| return .{ .num = ln + rn },
-                    else => {},
-                },
-                .string => |ls| switch (right) {
-                    .string => |rs| return .{
-                        .string = .{
-                            .string = try std.fmt.allocPrint(
-                                core.ctx.ally(),
-                                "{s}{s}",
-                                .{ ls.string, rs.string },
-                            ),
-                            .alloc_refcount = 0,
-                        },
-                    },
-                    else => {},
-                },
-                else => {},
-            }
-
-            core.ctx.report(op.source, "Operands must be two numbers or two strings");
-            return error.RuntimeError;
-        },
-        .GREATER => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .boolean = checked.left > checked.right };
-        },
-        .GREATER_EQUAL => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .boolean = checked.left >= checked.right };
-        },
-        .LESS => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .boolean = checked.left < checked.right };
-        },
-        .LESS_EQUAL => {
-            const checked = try core.checkNumberOperands(op.source, left, right);
-            return .{ .boolean = checked.left <= checked.right };
-        },
-
-        // unknown op
-        else => unreachable,
+pub fn valuesEqual(left: data.Value, right: data.Value) bool {
+    if (std.meta.activeTag(left) != std.meta.activeTag(right)) return false;
+    switch (std.meta.activeTag(left)) {
+        .num => return right.num == left.num,
+        .string => return std.mem.eql(u8, left.string.string, right.string.string),
+        .func => return right.func.decl.body.start == left.func.decl.body.start,
+        .class => return right.class == left.class,
+        .instance => return right.instance == left.instance,
+        .boolean => return right.boolean == left.boolean,
+        else => return true,
     }
-}
-fn checkNumberOperands(
-    core: *Core,
-    op: Token.Source,
-    left: data.Value,
-    right: data.Value,
-) data.Signal!struct { left: f64, right: f64 } {
-    switch (left) {
-        .num => |ln| {
-            switch (right) {
-                .num => |rn| return .{ .left = ln, .right = rn },
-                else => {},
-            }
-        },
-        else => {},
-    }
-    core.ctx.report(op, "Operands must be numbers");
-    return error.RuntimeError;
 }
 
 pub inline fn superGet(

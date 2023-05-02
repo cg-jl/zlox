@@ -77,11 +77,11 @@ fn classDecl(p: *NodeParser) AnyErr!Ast.Index {
         const superclass = try p.consume(.IDENTIFIER, "Expected superclass name");
         var methods = try p.classMethods();
         defer methods.deinit();
-        return p.builder.class(name, superclass, methods.items);
+        return p.builder.class(name.source, superclass, methods.items);
     } else {
         var methods = try p.classMethods();
         defer methods.deinit();
-        return p.builder.singleClass(name, methods.items);
+        return p.builder.singleClass(name.source, methods.items);
     }
 }
 
@@ -103,7 +103,7 @@ fn classMethods(p: *NodeParser) AnyErr!std.ArrayList(Ast.Node) {
 fn function(p: *NodeParser, comptime kind: []const u8) AnyErr!Ast.Index {
     const name = try p.consume(.IDENTIFIER, "Expected " ++ kind ++ " name");
     const decl = try p.funcDecl(kind);
-    return p.builder.function(name, decl);
+    return p.builder.function(name.source, decl);
 }
 
 fn statement(p: *NodeParser, comptime required_semicolon: bool) AnyErr!Ast.Index {
@@ -123,7 +123,7 @@ fn statement(p: *NodeParser, comptime required_semicolon: bool) AnyErr!Ast.Index
 
 fn lambda(p: *NodeParser, kw: Token) AnyErr!Ast.Index {
     const decl = try p.funcDecl("lambda");
-    return p.builder.function(kw, decl);
+    return p.builder.function(kw.source, decl);
 }
 
 // NOTE: what about doing naked/one/two argument versions?
@@ -225,9 +225,9 @@ fn varDecl(p: *NodeParser, comptime required_semicolon: bool) AnyErr!Ast.Index {
     var index: AnyErr!Ast.Index = undefined;
     if (p.match(.EQUAL)) |_| {
         const init = try p.expression();
-        index = p.builder.initVarDecl(name, init);
+        index = p.builder.initVarDecl(name.source, init);
     } else {
-        index = p.builder.nakedVarDecl(name);
+        index = p.builder.nakedVarDecl(name.source);
     }
     if (required_semicolon) {
         _ = try p.consume(.SEMICOLON, "Expected ';' after variable declaration");
@@ -451,11 +451,11 @@ fn call(p: *NodeParser) AnyErr!Ast.Index {
                 }
 
                 const paren = try p.consume(.RIGHT_PAREN, "Expected ')' after arguments");
-                expr = try p.builder.call(paren, expr, args.items);
+                expr = try p.builder.call(paren.source, expr, args.items);
             },
             .DOT => {
                 const name = try p.consume(.IDENTIFIER, "Expected property name after '.'");
-                expr = try p.builder.get(name, expr);
+                expr = try p.builder.get(name.source, expr);
             },
             else => {
                 p.current -= 1;
@@ -471,12 +471,12 @@ fn primary(p: *NodeParser) AnyErr!Ast.Index {
         .SUPER => {
             _ = try p.consume(.DOT, "Expected '.' after 'super'");
             const method = try p.consume(.IDENTIFIER, "Expected superclass method name");
-            return p.builder.super(method);
+            return p.builder.super(method.source);
         },
-        .THIS => return p.builder.this(p.prev()),
+        .THIS => return p.builder.this(p.prev().source),
         .FALSE, .TRUE, .NIL, .NUMBER, .STRING => return p.builder.literal(p.prev()),
         .FUN => return p.lambda(p.prev()),
-        .IDENTIFIER => return p.builder.fetchVar(p.prev()),
+        .IDENTIFIER => return p.builder.fetchVar(p.prev().source),
         .LEFT_PAREN => {
             const inner = try p.expression();
             _ = try p.consume(.RIGHT_PAREN, "Expected ')' after expression");

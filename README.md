@@ -147,31 +147,27 @@ Measuring...
 ### `fib_opt.lox` - Basic fibonacci loop
 
 ```
-3.796320159999999e-05
-```
-```
 μ = 1.1311952400900665e-05 σ = 8.377049069412155e-07 η = 1.1171000000000002e-05
 ```
+```
+μ = 1.1205851632837888e-05 σ = 8.00675001089878e-07 η = 1.107e-05
+```
 
-Around 11 µs. Huge improvement (70%), thanks to not packing every possibility
-into the AST, and unpacking only what's needed to interpret every time.
+Still around 11 µs (<1% improvement). The re-layout of some data did not affect
+here, or it was balanced by other cache misses.
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
-1.65580141e+08
-3.2387978582e+01
-```
-```
 μ = 28.495360138666662 σ = 0.717394586315218 η = 28.542054694500003
 ```
+```
+μ = 27.02815113432927 σ = 0.42261051499309554 η = 27.051422258
+```
 
-About ~32~ 28s. An 11% improvement, by only unpacking what's needed.
-KCachegrind reports that there's more to do regarding the tokens in nodes,
-given that they currently occupy half the cacheline for just using their type.
-Already looking for ways to dissect the code and see what parts of the token we
-use on each side of the interpreter/resolver.
+About ~28~ 27s. A 5% improvement, probably because of the scale of the computation
+where we switch between binary expressions and calls.
 
 The cumulative improvement is of **80.9%**, relative to [the first working
 implementation](https://github.com/cybergsus/zlox/tree/be36de134e4b64949a6483a41a0c27ff8dda5b1d)

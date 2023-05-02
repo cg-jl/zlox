@@ -45,22 +45,22 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             const bin: Ast.Binary = w.ast.unpack(Ast.Binary, node_index);
             const lhs = try w.visitNode(bin.lhs);
             const rhs = try w.visitNode(bin.rhs);
-            return w.core.endBinary(lhs, rhs, bin.op);
+            return w.endBinary(node_index, bin.op, lhs, rhs);
         },
         .literal => return w.ast.unpack(Ast.Literal, node_index),
         .unary => {
             const unpacked = w.ast.unpack(Ast.Unary, node_index);
             const rhs = try w.visitNode(unpacked.rhs);
-            return w.core.endUnary(rhs, unpacked.op);
+            return w.endUnary(node_index, unpacked.op, rhs);
         },
         .fetchVar => {
             const token = w.ast.unpack(Ast.FetchVar, node_index);
-            return w.lookupVariable(token.source);
+            return w.lookupVariable(token);
         },
         .assign => {
             const unpacked = w.ast.unpack(Ast.Assign, node_index);
             const depth: data.Depth = w.locals.get(
-                Resolver.local(unpacked.name.source),
+                Resolver.local(unpacked.name),
             ).?;
             const valuep = w.core.valueAt(depth);
             var rhs = try w.visitNode(unpacked.rhs);
@@ -73,9 +73,11 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             const callee: data.Value = try w.visitNode(unpacked.callee);
             return switch (callee) {
                 .builtin_clock => {
-                    try @call(.always_inline, Core.checkCallArgCount, .{
-                        &w.core, 0, unpacked.params.len(), unpacked.paren.source,
-                    });
+                    try @call(
+                        .always_inline,
+                        checkCallArgCount,
+                        .{ w, node_index, 0, unpacked.params.len() },
+                    );
                     return w.core.getClock();
                 },
                 .class => |cl| {
@@ -83,56 +85,76 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
                     errdefer w.core.instance_pool.destroy(instance);
 
                     if (cl.init_method) |im| {
-                        try @call(.always_inline, Core.checkCallArgCount, .{
-                            &w.core,               im.decl.params.len(),
-                            unpacked.params.len(), unpacked.paren.source,
-                        });
+                        try @call(
+                            .always_inline,
+                            checkCallArgCount,
+                            .{
+                                w,
+                                node_index,
+                                im.decl.params.len(),
+                                unpacked.params.len(),
+                            },
+                        );
                         const bound = try w.core.bind(im, instance);
                         defer w.core.unbind(bound);
                         try w.makeInitCall(bound, unpacked.params);
                     } else {
-                        try @call(.always_inline, Core.checkCallArgCount, .{
-                            &w.core, 0, unpacked.params.len(), unpacked.paren.source,
-                        });
+                        try @call(
+                            .always_inline,
+                            checkCallArgCount,
+                            .{
+                                w,
+                                node_index,
+                                0,
+                                unpacked.params.len(),
+                            },
+                        );
                     }
 
                     return data.Value{ .instance = instance };
                 },
                 .func => |f| {
-                    try @call(.always_inline, Core.checkCallArgCount, .{
-                        &w.core,               f.decl.params.len(),
-                        unpacked.params.len(), unpacked.paren.source,
-                    });
+                    try @call(
+                        .always_inline,
+                        checkCallArgCount,
+                        .{
+                            w,
+                            node_index,
+                            f.decl.params.len(),
+                            unpacked.params.len(),
+                        },
+                    );
 
                     return w.makeRegularCall(f, unpacked.params);
                 },
                 else => {
-                    w.core.ctx.report(unpacked.paren.source, "Can only call functions or classes");
+                    const source = w.ast.unpack(Token.Source, node_index);
+                    w.core.ctx.report(source, "Can only call functions or classes");
                     return error.RuntimeError;
                 },
             };
         },
         .this => {
             const this = w.ast.unpack(Ast.This, node_index);
-            return w.lookupVariable(this.source);
+            return w.lookupVariable(this);
         },
         .super => {
             const super = w.ast.unpack(Ast.Super, node_index);
-            const this = w.lookupVariable(super.source);
-            return w.core.superGet(this, super.source);
+            const this = w.lookupVariable(super);
+            return w.core.superGet(this, super);
         },
         .get => {
             const get = w.ast.unpack(Ast.Get, node_index);
             const this = try w.visitNode(get.obj);
-            return w.core.instanceGet(this, get.name.source);
+            return w.core.instanceGet(this, get.name);
         },
         .set => {
             const set = w.ast.unpack(Ast.Set, node_index);
             const this = try w.visitNode(set.obj);
-            const instance = try w.core.checkInstancePut(this, set.name.source);
+            const instance = try w.core.checkInstancePut(this, set.name);
             var val = try w.visitNode(set.value);
             val.addRef();
-            try w.core.instancePut(instance, set.name.source.lexeme, val);
+            try w.core.instancePut(instance, set.name.lexeme, val);
             return val;
         },
         .lambda => {
@@ -156,7 +178,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             class_ptr.* = try w.buildClass(
                 info.methods,
                 null,
-                info.name.source.lexeme,
+                info.name.lexeme,
             );
 
             class_value_ptr.* = .{ .class = class_ptr };
@@ -186,7 +208,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             class_ptr.* = try w.buildClass(
                 info.methods,
                 superclass,
-                info.name.source.lexeme,
+                info.name.lexeme,
             );
 
             class_value_ptr.* = .{ .class = class_ptr };
@@ -268,6 +290,122 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
     }
 }
 
+inline fn checkCallArgCount(
+    w: *NodeWalker,
+    node_index: Ast.Index,
+    expected: usize,
+    got: usize,
+) data.AllocOrSignal!void {
+    if (expected != got) {
+        const source = w.ast.unpack(Token.Source, node_index);
+        w.core.ctx.report(source, try std.fmt.allocPrint(
+            w.core.ctx.ally(),
+            "Expected {} arguments but got {}",
+            .{ expected, got },
+        ));
+        return error.RuntimeError;
+    }
+}
+
+inline fn endUnary(
+    w: *NodeWalker,
+    node_index: Ast.Index,
+    op_ty: Token.Ty,
+    value: data.Value,
+) data.Result {
+    switch (op_ty) {
+        .BANG => return .{ .boolean = !Core.isTruthy(value) },
+        .MINUS => {
+            if (value == .num) {
+                return .{ .num = -value.num };
+            }
+            const source = w.ast.unpack(Token.Source, node_index);
+            w.core.ctx.report(source, "Operand must be a number");
+            return error.RuntimeError;
+        },
+        else => unreachable,
+    }
+}
+
+inline fn endBinary(
+    w: *NodeWalker,
+    node_index: Ast.Index,
+    op_ty: Token.Ty,
+    left: data.Value,
+    right: data.Value,
+) data.Result {
+    switch (op_ty) {
+        .MINUS => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .num = checked.left - checked.right };
+        },
+        .SLASH => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .num = checked.left / checked.right };
+        },
+        .STAR => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .num = checked.left * checked.right };
+        },
+        .GREATER => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .boolean = checked.left > checked.right };
+        },
+        .GREATER_EQUAL => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .boolean = checked.left >= checked.right };
+        },
+        .LESS => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .boolean = checked.left < checked.right };
+        },
+        .LESS_EQUAL => {
+            const checked = try w.checkNumberOperands(node_index, left, right);
+            return .{ .boolean = checked.left <= checked.right };
+        },
+        .EQUAL_EQUAL => {
+            return .{ .boolean = Core.valuesEqual(left, right) };
+        },
+        .BANG_EQUAL => {
+            return .{ .boolean = !Core.valuesEqual(left, right) };
+        },
+
+        .PLUS => {
+            if (left == .num and right == .num) {
+                return .{ .num = left.num + right.num };
+            } else if (left == .string and right == .string) {
+                return .{ .string = .{
+                    .string = try std.fmt.allocPrint(
+                        w.core.ctx.ally(),
+                        "{s}{s}",
+                        .{ left.string.string, right.string.string },
+                    ),
+                    .alloc_refcount = 0,
+                } };
+            }
+            const source = w.ast.unpack(Token.Source, node_index);
+            w.core.ctx.report(source, "Operands must be two numbers or two strings");
+            return error.RuntimeError;
+        },
+
+        else => unreachable,
+    }
+}
+
+inline fn checkNumberOperands(
+    w: *NodeWalker,
+    node_index: Ast.Index,
+    left: data.Value,
+    right: data.Value,
+) data.Signal!struct { left: f64, right: f64 } {
+    if (left == .num and right == .num) {
+        return .{ .left = left.num, .right = right.num };
+    }
+    const source = w.ast.unpack(Token.Source, node_index);
+    w.core.ctx.report(source, "Both operands must be numbers");
+    return error.RuntimeError;
+}
+
 const Methods = std.StringHashMapUnmanaged(data.Function);
 
 inline fn buildClass(
@@ -298,11 +436,11 @@ inline fn buildClass(
                 .decl = func.decl,
                 .closure = class_closure,
             };
-            const is_init = std.mem.eql(u8, func.name.source.lexeme, "init");
+            const is_init = std.mem.eql(u8, func.name.lexeme, "init");
             if (is_init) init_method = method;
             try methods.put(
                 w.core.arena.allocator(),
-                func.name.source.lexeme,
+                func.name.lexeme,
                 method,
             );
         }
