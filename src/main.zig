@@ -7,6 +7,7 @@ const Walker = @import("interpreter/NodeWalker.zig");
 const Parser = @import("NodeParser.zig");
 const Builder = @import("ast/NodeBuilder.zig");
 const Ast = @import("ast/Ast.zig");
+const callgrind = @import("callgrind.zig");
 
 pub fn main() !u8 {
     if (std.os.argv.len > 2) {
@@ -81,7 +82,9 @@ fn runFile(filename: []const u8, gpa: std.mem.Allocator) !void {
 
     if (Context.has_errored) return;
 
+    callgrind.startInstrumentation();
     try state.tryVisitBlock(root.items);
+    callgrind.stopInstrumentation();
 }
 
 fn runPrompt(gpa: std.mem.Allocator) !void {
