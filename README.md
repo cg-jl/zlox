@@ -2,14 +2,22 @@
 
 A Zig port of the tree-walk interpreter from Crafting Interpreters book.
 
-It's about 20% faster than the Java version, which took ~40s to run on my
+It's about 30% faster than the Java version, which took ~40s to run on my
 machine.
 
 ## Runs
 
-These are not good benchmarks, but due to the slowness of the implementation I'm
-not really able to run them more than once, without waiting till the end of the
-universe.
+
+The benchmarks now use 100000 runs for the `fib_opt.lox` script and 100 runs
+for the `fib.lox` script, taking ~45 minutes to finish. The new benchmarks now
+output the mean (μ), standard deviation (σ) and median (η) of the results. The
+median (η) is selected for performance comparisons, since it's the best option
+given that I run the benchmarks in the same machine I develop in, which means
+that there are other processes like the browser getting in the way sometimes.
+
+The C benchmarks stay the same, since the C code is just a way to make
+comparisons on how much slower is the intepreted language in regard to the C
+language in debug mode.
 
 ### Reference C implementation
 
@@ -141,21 +149,29 @@ Measuring...
 ```
 3.796320159999999e-05
 ```
+```
+μ = 1.1311952400900665e-05 σ = 8.377049069412155e-07 η = 1.1171000000000002e-05
+```
 
-Around 37 us. Around the average
+Around 11 µs. Huge improvement (70%), thanks to not packing every possibility
+into the AST, and unpacking only what's needed to interpret every time.
 
 
 ### `fib.lox` - Recursive implementation.
 
 ```
 1.65580141e+08
-3.650257832e+01
-```
-```
-1.65580141e+08
 3.2387978582e+01
 ```
+```
+μ = 28.495360138666662 σ = 0.717394586315218 η = 28.542054694500003
+```
 
-About ~36~ 32s. An 11% improvement, by removing a layer of cache indirection.
-The cumulative improvement is of **79%**, relative to [the first working
+About ~32~ 28s. An 11% improvement, by only unpacking what's needed.
+KCachegrind reports that there's more to do regarding the tokens in nodes,
+given that they currently occupy half the cacheline for just using their type.
+Already looking for ways to dissect the code and see what parts of the token we
+use on each side of the interpreter/resolver.
+
+The cumulative improvement is of **80.9%**, relative to [the first working
 implementation](https://github.com/cybergsus/zlox/tree/be36de134e4b64949a6483a41a0c27ff8dda5b1d)
