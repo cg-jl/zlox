@@ -59,9 +59,7 @@ pub fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
     }
     try tokens.append(Token{
         .ty = .EOF,
-        .lexeme = "",
-        .col = scn.column(),
-        .line = scn.line,
+        .source = scn.grabSource(),
     });
 }
 
@@ -209,13 +207,18 @@ fn advanceLine(scn: *Scanner) void {
 
 fn token(scn: *const Scanner, ty: Token.Ty) Token {
     return Token{
-        .line = scn.line,
-        .col = scn.column(),
-        .lexeme = scn.source[scn.start..scn.current],
+        .source = scn.grabSource(),
         .ty = ty,
     };
 }
 
+fn grabSource(scn: *const Scanner) Token.Source {
+    return Token.Source{
+        .lexeme = scn.source[scn.start..scn.current],
+        .col = scn.column(),
+        .line = scn.line,
+    };
+}
 
 inline fn column(scn: *const Scanner) u32 {
     return scn.current - scn.line_start;

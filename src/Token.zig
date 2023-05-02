@@ -46,7 +46,11 @@ pub const Ty = enum(u6) {
 
 pub const Mask = std.enums.EnumSet(Ty);
 
+pub const Source = struct {
+    lexeme: []const u8,
+    line: u16,
+    col: u32,
+};
+
 ty: Ty,
-lexeme: []const u8,
-line: u16,
-col: u32,
+source: Source,

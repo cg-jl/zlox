@@ -24,7 +24,7 @@ fn tryVisitNode(w: *NodeWalker, index: Ast.Index) AllocErr!data.Value {
         std.debug.assert(err != error.Return);
         if (err == error.RuntimeError) {
             const last_error = w.core.ctx.last_error.?;
-            context.reportToken(last_error.token, last_error.message);
+            context.reportSource(last_error.token.source, last_error.message);
             return data.Value.nil();
         }
         return @errSetCast(AllocErr, err);
@@ -154,7 +154,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             class_ptr.* = try w.buildClass(
                 info.methods,
                 null,
-                info.name.lexeme,
+                info.name.source.lexeme,
             );
 
             class_value_ptr.* = .{ .class = class_ptr };
@@ -184,7 +184,7 @@ pub fn visitNode(w: *NodeWalker, node_index: Ast.Index) data.Result {
             class_ptr.* = try w.buildClass(
                 info.methods,
                 superclass,
-                info.name.lexeme,
+                info.name.source.lexeme,
             );
 
             class_value_ptr.* = .{ .class = class_ptr };
@@ -296,11 +296,11 @@ inline fn buildClass(
                 .decl = func.decl,
                 .closure = class_closure,
             };
-            const is_init = std.mem.eql(u8, func.name.lexeme, "init");
+            const is_init = std.mem.eql(u8, func.name.source.lexeme, "init");
             if (is_init) init_method = method;
             try methods.put(
                 w.core.arena.allocator(),
-                func.name.lexeme,
+                func.name.source.lexeme,
                 method,
             );
         }

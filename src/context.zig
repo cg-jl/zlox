@@ -11,15 +11,20 @@ pub fn clear() void {
     has_errored = false;
 }
 
-pub fn reportToken(token: Token, message: []const u8) void {
+pub fn reportSource(src: Token.Source, message: []const u8) void {
     setErrored();
-    if (token.ty == .EOF) {
-        std.log.err("{}:{}: Error at end: {s}", .{ token.line, token.col, message });
+    const is_eof = src.lexeme.len == 0;
+    if (is_eof) {
+        std.log.err("{}:{}: Error at end: {s}", .{
+            src.line,
+            src.col,
+            message,
+        });
     } else {
-        std.log.err("{}:{} Error at '{s}': {s}", .{
-            token.line,
-            token.col,
-            token.lexeme,
+        std.log.err("{}:{}: Error at '{s}': {s}", .{
+            src.line,
+            src.col,
+            src.lexeme,
             message,
         });
     }

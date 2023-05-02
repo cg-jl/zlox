@@ -26,10 +26,10 @@ pub const FatStr = struct {
 pub inline fn literalToValue(tok: Token) Value {
     return switch (tok.ty) {
         .NUMBER => .{
-            .num = std.fmt.parseFloat(f64, tok.lexeme) catch unreachable,
+            .num = std.fmt.parseFloat(f64, tok.source.lexeme) catch unreachable,
         },
         .STRING => .{ .string = .{
-            .string = tok.lexeme[1 .. tok.lexeme.len - 1],
+            .string = tok.source.lexeme[1 .. tok.source.lexeme.len - 1],
             .alloc_refcount = null,
         } },
         .TRUE => .{ .boolean = true },

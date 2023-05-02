@@ -17,10 +17,10 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
         .fetchVar => {
             const fetch_var = r.ast.unpack(Ast.FetchVar, node_index);
             if (r.latestScope()) |scope| {
-                if (scope.get(fetch_var.lexeme)) |x| {
+                if (scope.get(fetch_var.source.lexeme)) |x| {
                     if (!x.initialized) {
-                        context.reportToken(
-                            fetch_var,
+                        context.reportSource(
+                            fetch_var.source,
                             "Cannot read local variable in its own initializer",
                         );
                     }
@@ -31,13 +31,13 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
         .super => {
             const method = r.ast.unpack(Ast.Super, node_index);
             if (r.current_class == .none) {
-                context.reportToken(
-                    method,
+                context.reportSource(
+                    method.source,
                     "Cannot use 'super' outside of a class",
                 );
             } else if (r.current_class != .subclass) {
-                context.reportToken(
-                    method,
+                context.reportSource(
+                    method.source,
                     "Cannot use 'super' in a class with no superclass",
                 );
             } else {
@@ -47,7 +47,7 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
         .this => {
             const this = r.ast.unpack(Ast.This, node_index);
             if (r.current_class == .none) {
-                context.reportToken(this, "Cannot use 'this' outside af a class");
+                context.reportSource(this.source, "Cannot use 'this' outside af a class");
             } else {
                 std.debug.assert(try r.resolveName("this", local(this)));
             }
@@ -172,7 +172,7 @@ fn resolveClass(
     for (methods.start..methods.end) |i| {
         std.debug.assert(r.ast.nodes.items(.tag)[i] == .function);
         const method = r.ast.unpack(Ast.Function, i);
-        const is_init = std.mem.eql(u8, "init", method.name.lexeme);
+        const is_init = std.mem.eql(u8, "init", method.name.source.lexeme);
         const decltype: FuncType = if (is_init) .initializer else .method;
         try r.resolveFuncDecl(method.decl, decltype);
     }
@@ -217,8 +217,8 @@ const VarInfo = packed struct {
 };
 pub inline fn local(token: Token) Local {
     return .{
-        .line = token.line,
-        .col = token.col,
+        .line = token.source.line,
+        .col = token.source.col,
     };
 }
 
@@ -283,10 +283,13 @@ fn endScope(r: *NodeResolver) void {
 
 fn declare(r: *NodeResolver, name: Token) Result {
     const scope = r.latestScope().?;
-    const get_or_put: Scope.GetOrPutResult = try scope.getOrPut(r.ally(), name.lexeme);
+    const get_or_put: Scope.GetOrPutResult = try scope.getOrPut(
+        r.ally(),
+        name.source.lexeme,
+    );
     if (get_or_put.found_existing) {
-        context.reportToken(
-            name,
+        context.reportSource(
+            name.source,
             "Variable with this name already declared in this scope",
         );
     }
@@ -310,7 +313,7 @@ fn latestScope(r: *NodeResolver) ?*Scope {
 }
 
 inline fn define(r: *NodeResolver, name: Token) AllocErr!void {
-    return r.defineName(name.lexeme);
+    return r.defineName(name.source.lexeme);
 }
 fn resolveName(r: *NodeResolver, name: []const u8, use_local: Local) data.AllocErr!bool {
     var i: usize = r.scopes.items.len;
@@ -326,9 +329,9 @@ fn resolveName(r: *NodeResolver, name: []const u8, use_local: Local) data.AllocE
     } else false;
 }
 fn resolveLocal(r: *NodeResolver, name: Token) data.AllocErr!void {
-    const could_resolve_name = try r.resolveName(name.lexeme, local(name));
+    const could_resolve_name = try r.resolveName(name.source.lexeme, local(name));
     if (!could_resolve_name)
-        context.reportToken(name, "Could not resolve variable");
+        context.reportSource(name.source, "Could not resolve variable");
 }
 
 inline fn ally(r: *NodeResolver) std.mem.Allocator {

@@ -96,7 +96,7 @@ pub inline fn instancePut(
     name: Token,
     value: data.Value,
 ) AllocErr!void {
-    try instance.fields.put(storage.arena.allocator(), name.lexeme, value);
+    try instance.fields.put(storage.arena.allocator(), name.source.lexeme, value);
 }
 
 pub fn instanceGet(storage: *Core, this: data.Value, token: Token) Result {
@@ -104,14 +104,14 @@ pub fn instanceGet(storage: *Core, this: data.Value, token: Token) Result {
         storage.ctx.report(token, "Only instances have properties");
         return error.RuntimeError;
     };
-    if (instance.fields.get(token.lexeme)) |f| return f;
-    if (instance.class.findMethod(token.lexeme)) |m| {
+    if (instance.fields.get(token.source.lexeme)) |f| return f;
+    if (instance.class.findMethod(token.source.lexeme)) |m| {
         return .{ .func = try storage.bind(m, instance) };
     }
     storage.ctx.report(token, try std.fmt.allocPrint(
         storage.ctx.ally(),
         "Undefined property '{s}'",
-        .{token.lexeme},
+        .{token.source.lexeme},
     ));
     return error.RuntimeError;
 }
@@ -248,11 +248,11 @@ fn checkNumberOperands(
 pub inline fn superGet(core: *Core, this: data.Value, method_tok: Token) Result {
     const instance = if (this == .instance) this.instance else unreachable;
     const superclass: *const data.Class = instance.class.superclass.?;
-    const method: data.Function = superclass.findMethod(method_tok.lexeme) orelse {
+    const method: data.Function = superclass.findMethod(method_tok.source.lexeme) orelse {
         core.ctx.report(method_tok, try std.fmt.allocPrint(
             core.ctx.ally(),
             "Undefined property '{s}'",
-            .{method_tok.lexeme},
+            .{method_tok.source.lexeme},
         ));
         return error.RuntimeError;
     };

@@ -515,7 +515,7 @@ inline fn consume(
 }
 
 inline fn report(_: *const NodeParser, token: Token, comptime msg: []const u8) void {
-    context.reportToken(token, msg);
+    context.reportSource(token.source, msg);
 }
 
 inline fn matchMulti(p: *NodeParser, comptime types: []const Token.Ty) ?Token {
