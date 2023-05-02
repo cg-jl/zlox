@@ -61,7 +61,6 @@ pub fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
         .ty = .EOF,
         .lexeme = "",
         .col = scn.column(),
-        .literal = .{ .none = {} },
         .line = scn.line,
     });
 }
@@ -73,35 +72,35 @@ fn isAtEnd(scn: *const Scanner) bool {
 fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
     const c: u8 = scn.advance();
     switch (c) {
-        '(' => return tokens.append(scn.tokenFromTy(.LEFT_PAREN)),
-        ')' => return tokens.append(scn.tokenFromTy(.RIGHT_PAREN)),
-        '{' => return tokens.append(scn.tokenFromTy(.LEFT_BRACE)),
-        '}' => return tokens.append(scn.tokenFromTy(.RIGHT_BRACE)),
-        ',' => return tokens.append(scn.tokenFromTy(.COMMA)),
-        '.' => return tokens.append(scn.tokenFromTy(.DOT)),
-        '-' => return tokens.append(scn.tokenFromTy(.MINUS)),
-        '+' => return tokens.append(scn.tokenFromTy(.PLUS)),
-        ';' => return tokens.append(scn.tokenFromTy(.SEMICOLON)),
-        '*' => return tokens.append(scn.tokenFromTy(.STAR)),
-        '!' => return tokens.append(scn.tokenFromTy(
+        '(' => return tokens.append(scn.token(.LEFT_PAREN)),
+        ')' => return tokens.append(scn.token(.RIGHT_PAREN)),
+        '{' => return tokens.append(scn.token(.LEFT_BRACE)),
+        '}' => return tokens.append(scn.token(.RIGHT_BRACE)),
+        ',' => return tokens.append(scn.token(.COMMA)),
+        '.' => return tokens.append(scn.token(.DOT)),
+        '-' => return tokens.append(scn.token(.MINUS)),
+        '+' => return tokens.append(scn.token(.PLUS)),
+        ';' => return tokens.append(scn.token(.SEMICOLON)),
+        '*' => return tokens.append(scn.token(.STAR)),
+        '!' => return tokens.append(scn.token(
             if (scn.match('='))
                 .BANG_EQUAL
             else
                 .BANG,
         )),
-        '=' => return tokens.append(scn.tokenFromTy(
+        '=' => return tokens.append(scn.token(
             if (scn.match('='))
                 .EQUAL_EQUAL
             else
                 .EQUAL,
         )),
-        '<' => return tokens.append(scn.tokenFromTy(
+        '<' => return tokens.append(scn.token(
             if (scn.match('='))
                 .LESS_EQUAL
             else
                 .LESS,
         )),
-        '>' => return tokens.append(scn.tokenFromTy(
+        '>' => return tokens.append(scn.token(
             if (scn.match('='))
                 .GREATER_EQUAL
             else
@@ -112,7 +111,7 @@ fn scanToken(scn: *Scanner, tokens: *Tokens) AllocError!void {
                 scn.current += 1;
                 while (!scn.isAtEnd() and scn.peek() != '\n') scn.current += 1;
             } else {
-                return tokens.append(scn.tokenFromTy(.SLASH));
+                return tokens.append(scn.token(.SLASH));
             }
         },
         ' ', '\r', '\t' => {},
@@ -147,7 +146,7 @@ fn identifier(scn: *Scanner, tokens: *Tokens) !void {
 
     const text = scn.source[scn.start..scn.current];
     const typ = keywords.get(text) orelse .IDENTIFIER;
-    try tokens.append(scn.tokenFromTy(typ));
+    try tokens.append(scn.token(typ));
 }
 
 fn number(scn: *Scanner, tokens: *Tokens) !void {
@@ -164,8 +163,7 @@ fn number(scn: *Scanner, tokens: *Tokens) !void {
         }
     }
 
-    const value = std.fmt.parseFloat(f64, scn.source[scn.start..scn.current]) catch unreachable;
-    try tokens.append(scn.token(.NUMBER, .{ .num = value }));
+    try tokens.append(scn.token(.NUMBER));
 }
 
 fn string(scn: *Scanner, tokens: *Tokens) !void {
@@ -180,8 +178,7 @@ fn string(scn: *Scanner, tokens: *Tokens) !void {
     }
     scn.current += 1;
 
-    const value = scn.source[scn.start + 1 .. scn.current - 1];
-    try tokens.append(scn.token(.STRING, .{ .string = value }));
+    try tokens.append(scn.token(.STRING));
 }
 
 fn report(scn: *const Scanner, comptime message: []const u8) void {
@@ -210,19 +207,15 @@ fn advanceLine(scn: *Scanner) void {
     scn.line_start = scn.current;
 }
 
-fn token(scn: *const Scanner, ty: Token.Ty, lit: Token.Literal) Token {
+fn token(scn: *const Scanner, ty: Token.Ty) Token {
     return Token{
         .line = scn.line,
         .col = scn.column(),
         .lexeme = scn.source[scn.start..scn.current],
         .ty = ty,
-        .literal = lit,
     };
 }
 
-fn tokenFromTy(scn: *const Scanner, ty: Token.Ty) Token {
-    return scn.token(ty, .{ .none = {} });
-}
 
 inline fn column(scn: *const Scanner) u32 {
     return scn.current - scn.line_start;

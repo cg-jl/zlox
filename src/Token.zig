@@ -46,60 +46,7 @@ pub const Ty = enum(u6) {
 
 pub const Mask = std.enums.EnumSet(Ty);
 
-pub const TaggedLiteral = union(enum(u2)) {
-    string: []const u8,
-    num: f64,
-    boolean: bool,
-    nil: void,
-
-    pub fn format(
-        slf: TaggedLiteral,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        switch (slf) {
-            .string => |s| try writer.print("{s}", .{s}),
-            .num => |n| try writer.print("{}", .{n}),
-            .boolean => |b| try writer.print("{}", .{b}),
-            .nil => try writer.print("nil", .{}),
-        }
-    }
-};
-
-pub const Literal = union {
-    string: []const u8,
-    num: f64,
-    none: void,
-};
-
 ty: Ty,
 lexeme: []const u8,
-literal: Literal,
 line: u16,
 col: u32,
-
-pub fn extractLiteral(tok: Token) TaggedLiteral {
-    return switch (tok.ty) {
-        .NUMBER => .{ .num = tok.literal.num },
-        .STRING => .{ .string = tok.literal.string },
-        .TRUE => .{ .boolean = true },
-        .FALSE => .{ .boolean = false },
-        .NIL => .{ .nil = {} },
-        else => unreachable,
-    };
-}
-
-pub fn format(
-    slf: Token,
-    comptime _: []const u8,
-    _: std.fmt.FormatOptions,
-    writer: anytype,
-) @TypeOf(writer).Error!void {
-    try writer.print("{} {s}", .{ slf.ty, slf.lexeme });
-    if (slf.ty == .STRING) {
-        try writer.print(" {s}", .{slf.literal.string});
-    } else if (slf.ty == .NUMBER) {
-        try writer.print(" {}", .{slf.literal.num});
-    }
-}

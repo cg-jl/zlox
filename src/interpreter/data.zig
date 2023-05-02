@@ -23,12 +23,19 @@ pub const FatStr = struct {
     string: []const u8,
 };
 
-pub inline fn literalToValue(l: Token.TaggedLiteral) Value {
-    return switch (l) {
-        .string => |s| .{ .string = .{ .string = s, .alloc_refcount = null } },
-        .num => |n| .{ .num = n },
-        .boolean => |b| .{ .boolean = b },
-        .nil => .{ .nil = {} },
+pub inline fn literalToValue(tok: Token) Value {
+    return switch (tok.ty) {
+        .NUMBER => .{
+            .num = std.fmt.parseFloat(f64, tok.lexeme) catch unreachable,
+        },
+        .STRING => .{ .string = .{
+            .string = tok.lexeme[1 .. tok.lexeme.len - 1],
+            .alloc_refcount = null,
+        } },
+        .TRUE => .{ .boolean = true },
+        .FALSE => .{ .boolean = false },
+        .NIL => .{ .nil = {} },
+        else => unreachable,
     };
 }
 

@@ -285,7 +285,7 @@ pub inline fn literal(b: *NodeBuilder, lit_token: Token) Error!Ast.Index {
     const literal_index = @intCast(Ast.Index, b.literals.items.len);
     try b.literals.append(
         b.alloc,
-        interpreter.literalToValue(lit_token.extractLiteral()),
+        interpreter.literalToValue(lit_token),
     );
     return b.node(.{
         .tag = .literal,
