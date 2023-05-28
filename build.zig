@@ -3,7 +3,7 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -24,9 +24,24 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const valgrind_flags = std.os.getenv("VALGRIND_FLAGS") orelse defValgrindFlags: {
+        std.log.warn("No `VALGRIND_FLAGS` environment var found, using defaults", .{});
+        break :defValgrindFlags "-I/usr/include -O3";
+    };
+
+    std.log.info("Using valgrind flags: {s}", .{valgrind_flags});
+
+    var parsed_args = std.ArrayList([]const u8).init(b.allocator);
+    defer parsed_args.deinit();
+
+    {
+        var it = std.mem.split(u8, valgrind_flags, " ");
+        while (it.next()) |next| try parsed_args.append(next);
+    }
+
     exe.addCSourceFile(
         "src/callgrind.c",
-        &[_][]const u8{ "-I/usr/include", "-O3" },
+        parsed_args.items,
     );
 
     // This declares intent for the executable to be installed into the
