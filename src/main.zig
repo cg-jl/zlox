@@ -7,7 +7,7 @@ const Walker = @import("interpreter/NodeWalker.zig");
 const Parser = @import("NodeParser.zig");
 const Builder = @import("ast/NodeBuilder.zig");
 const Ast = @import("ast/Ast.zig");
-const callgrind = @import("callgrind.zig");
+const callgrind = std.valgrind.callgrind;
 
 pub fn main() !u8 {
     if (std.os.argv.len > 2) {
