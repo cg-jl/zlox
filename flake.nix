@@ -43,7 +43,14 @@
             zigpkgs.master
             valgrind
           ];
-          buildInputs = with pkgs; [ zls ];
+          buildInputs = with pkgs; [
+            # bench.py's dependencies
+            python310
+            python310Packages.numpy
+            python310Packages.tqdm
+
+            zls 
+          ];
           shellHook = ''
             export VALGRIND_FLAGS="-I${pkgs.valgrind.dev}/include -L${pkgs.valgrind}/lib -O3"
           '';
