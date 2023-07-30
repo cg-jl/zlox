@@ -55,14 +55,14 @@ const Measurement = struct {
 // NOTE: we're integrating the 'elapsed sum' already to know if we're past
 // `max_time` during the benchmarks, so why not just accept it as a parameter?
 fn calculateMeasurement(elapsed: []const u64, elapsed_sum: u64) Measurement {
-    const mean = @intToFloat(f64, elapsed_sum) / @intToFloat(f64, elapsed.len);
+    const mean = @as(f64, @floatFromInt(elapsed_sum)) / @as(f64, @floatFromInt(elapsed.len));
     const stddev = std.math.sqrt(sumVariance: {
         var variance: f64 = 0;
         for (elapsed) |e| {
-            const diff = @intToFloat(f64, e) - mean;
+            const diff = @as(f64, @floatFromInt(e)) - mean;
             variance += diff * diff;
         }
-        break :sumVariance variance / @intToFloat(f64, elapsed.len);
+        break :sumVariance variance / @as(f64, @floatFromInt(elapsed.len));
     });
 
     const minmax = std.mem.minMax(u64, elapsed);
@@ -214,7 +214,7 @@ const JustPackIt = struct {
     pub const eql = std.hash_map.getAutoEqlFn(Local, @This());
     pub fn hash(_: JustPackIt, local: Local) u64 {
         const T = std.meta.Int(.unsigned, @bitSizeOf(Local));
-        return @bitCast(T, local);
+        return @as(T, @bitCast(local));
     }
 };
 

@@ -114,7 +114,7 @@ fn printBlock(p: *Printer, body: Ast.SliceIndex) void {
     p.indent_level += 1;
     for (body.start..body.end) |st| {
         p.makeIndent();
-        p.printNode(@intCast(Ast.Index, st));
+        p.printNode(@as(Ast.Index, @intCast(st)));
     }
 }
 
@@ -262,7 +262,7 @@ fn printCall(p: *Printer, call: Ast.Call) void {
         p.indent_level += 1;
         for (call.params.start..call.params.end) |arg| {
             p.makeIndent();
-            p.printNode(@intCast(Ast.Index, arg));
+            p.printNode(@as(Ast.Index, @intCast(arg)));
         }
     }
 }

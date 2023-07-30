@@ -27,7 +27,7 @@ fn tryVisitNode(w: *NodeWalker, index: Ast.Index) AllocErr!data.Value {
             context.reportSource(last_error.source, last_error.message);
             return data.Value.nil();
         }
-        return @errSetCast(AllocErr, err);
+        return @as(AllocErr, @errSetCast(err));
     };
 }
 
@@ -461,7 +461,7 @@ inline fn lookupVariable(w: *NodeWalker, v: Token.Source) data.Value {
 
 fn executeBlock(w: *NodeWalker, block: Ast.SliceIndex) data.VoidResult {
     for (block.start..block.end) |i| {
-        _ = try w.visitNode(@intCast(Ast.Index, i));
+        _ = try w.visitNode(@as(Ast.Index, @intCast(i)));
     }
 }
 
@@ -514,7 +514,7 @@ inline fn setupCall(
     );
 
     for (args.start..args.end) |i| {
-        w.core.values.appendAssumeCapacity(try w.visitNode(@intCast(Ast.Index, i)));
+        w.core.values.appendAssumeCapacity(try w.visitNode(@as(Ast.Index, @intCast(i))));
     }
 
     w.core.pushFrame(frame);

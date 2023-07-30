@@ -182,8 +182,8 @@ pub fn bind(
 }
 
 pub inline fn getClock(core: *Core) data.Value {
-    const conversion = comptime @intToFloat(f64, std.time.ns_per_s);
-    const value = @intToFloat(f64, core.timer.read());
+    const conversion = comptime @as(f64, @floatFromInt(std.time.ns_per_s));
+    const value = @as(f64, @floatFromInt(core.timer.read()));
     return .{ .num = value / conversion };
 }
 

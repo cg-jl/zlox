@@ -48,7 +48,7 @@ pub fn tryDeclaration(p: *NodeParser, comptime required_semicolon: bool) AllocEr
             p.synchronize();
             return null;
         }
-        return @errSetCast(AllocErr, err);
+        return @as(AllocErr, @errSetCast(err));
     };
 }
 
@@ -298,7 +298,7 @@ fn exprStmt(p: *NodeParser, comptime required_semicolon: bool) AnyErr!Ast.Index 
 pub fn tryExpression(p: *NodeParser) AllocErr!?Ast.Index {
     return p.expression() catch |err| {
         if (err == error.ParseError) return null;
-        return @errSetCast(AllocErr, err);
+        return @as(AllocErr, @errSetCast(err));
     };
 }
 

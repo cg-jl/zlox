@@ -39,7 +39,7 @@ pub inline fn dropTokenAnnotate(b: *NodeBuilder, stamp: Ast.Index) void {
 }
 
 pub inline fn stampTokenAnnotate(b: *const NodeBuilder) Ast.Index {
-    return @truncate(Ast.Index, b.annotated_tokens.items.len);
+    return @as(Ast.Index, @truncate(b.annotated_tokens.items.len));
 }
 
 pub fn class(
@@ -48,7 +48,7 @@ pub fn class(
     superclass: Token,
     methods: []const Ast.Node,
 ) Error!Ast.Index {
-    const superclass_tk_index = @intCast(Ast.Index, b.annotated_tokens.items.len);
+    const superclass_tk_index = @as(Ast.Index, @intCast(b.annotated_tokens.items.len));
     try b.annotateToken(superclass);
     try b.node_list.ensureUnusedCapacity(b.alloc, methods.len + 1);
     const class_data = Ast.Node.Class{
@@ -303,7 +303,7 @@ pub inline fn binary(
 }
 
 pub inline fn literal(b: *NodeBuilder, lit_token: Token) Error!Ast.Index {
-    const literal_index = @intCast(Ast.Index, b.literals.items.len);
+    const literal_index = @as(Ast.Index, @intCast(b.literals.items.len));
     try b.literals.append(
         b.alloc,
         interpreter.literalToValue(lit_token),
@@ -328,13 +328,13 @@ pub inline fn unary(b: *NodeBuilder, op: Token, rhs: Ast.Index) Error!Ast.Index 
 pub inline fn node(b: *NodeBuilder, n: Ast.Node) Error!Ast.Index {
     const index = b.node_list.len;
     try b.node_list.append(b.alloc, n);
-    return @truncate(Ast.Index, index);
+    return @as(Ast.Index, @truncate(index));
 }
 
 inline fn nodeAssumeCapacity(b: *NodeBuilder, n: Ast.Node) Ast.Index {
     const index = b.node_list.len;
     b.node_list.appendAssumeCapacity(n);
-    return @truncate(Ast.Index, index);
+    return @as(Ast.Index, @truncate(index));
 }
 
 fn writeExtraData(
@@ -363,7 +363,7 @@ fn writeExtraData(
         }
     }
 
-    return @truncate(Ast.Index, start_index);
+    return @as(Ast.Index, @truncate(start_index));
 }
 
 fn indexCount(comptime fields: []const builtin.Type.StructField) usize {
@@ -381,8 +381,8 @@ fn indexCount(comptime fields: []const builtin.Type.StructField) usize {
 
 inline fn nodesAssumeCapacity(b: *NodeBuilder, nodes: []const Ast.Node) Ast.SliceIndex {
     const slice: Ast.SliceIndex = .{
-        .start = @intCast(Ast.Index, b.node_list.len),
-        .end = @intCast(Ast.Index, b.node_list.len + nodes.len),
+        .start = @as(Ast.Index, @intCast(b.node_list.len)),
+        .end = @as(Ast.Index, @intCast(b.node_list.len + nodes.len)),
     };
 
     for (nodes) |n| b.node_list.appendAssumeCapacity(n);

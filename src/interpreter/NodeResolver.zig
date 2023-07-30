@@ -83,7 +83,7 @@ pub fn resolveNode(r: *NodeResolver, node_index: Ast.Index) Result {
             const call = r.ast.unpack(Ast.Call, node_index);
             try r.resolveNode(call.callee);
             for (call.params.start..call.params.end) |i| {
-                try r.resolveNode(@intCast(Ast.Index, i));
+                try r.resolveNode(@as(Ast.Index, @intCast(i)));
             }
         },
         .get => {
@@ -199,7 +199,7 @@ fn resolveFuncDecl(
     // Do not create a new scope for these. This makes shadowing arguments
     // illegal, but they're mutable so it's OK.
     for (decl.body.start..decl.body.end) |i| {
-        try r.resolveNode(@intCast(Ast.Index, i));
+        try r.resolveNode(@as(Ast.Index, @intCast(i)));
     }
 }
 
@@ -207,7 +207,7 @@ inline fn resolveBlock(r: *NodeResolver, block: Ast.SliceIndex) Result {
     try r.beginScope();
     defer r.endScope();
     for (block.start..block.end) |i| {
-        try r.resolveNode(@intCast(Ast.Index, i));
+        try r.resolveNode(@as(Ast.Index, @intCast(i)));
     }
 }
 
@@ -235,11 +235,11 @@ pub const DepthMap = LocalMap(data.Depth);
 
 const LocalContext = struct {
     pub fn eql(_: LocalContext, a: Local, b: Local) bool {
-        return @bitCast(Local.U, a) == @bitCast(Local.U, b);
+        return @as(Local.U, @bitCast(a)) == @as(Local.U, @bitCast(b));
     }
 
     pub fn hash(_: LocalContext, k: Local) u64 {
-        return @bitCast(Local.U, k);
+        return @as(Local.U, @bitCast(k));
     }
 };
 
