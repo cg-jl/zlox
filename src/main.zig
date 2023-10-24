@@ -109,8 +109,8 @@ fn runPrompt(gpa: std.mem.Allocator) !void {
     defer resolver.deinit();
     defer resolver.locals.deinit();
 
-    defer builder.deinit();
     defer gp_arena.deinit();
+    defer builder.deinit();
 
     while (true) {
         const line_end =
