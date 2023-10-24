@@ -52,7 +52,7 @@ pub fn scan(tokens: *Tokens, full_source: []const u8) AllocError!void {
     try scanner.scanTokens(tokens);
 }
 
-pub fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
+fn scanTokens(scn: *Scanner, tokens: *Tokens) AllocError!void {
     while (!scn.isAtEnd()) {
         scn.start = scn.current;
         try scn.scanToken(tokens);
