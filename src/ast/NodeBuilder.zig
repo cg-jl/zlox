@@ -28,6 +28,7 @@ pub fn deinit(b: *NodeBuilder) void {
     b.extra_data.deinit(b.alloc);
     b.node_list.deinit(b.alloc);
     b.annotated_tokens.deinit(b.alloc);
+    b.literals.deinit(b.alloc);
 }
 
 pub inline fn annotateToken(b: *NodeBuilder, tok: Token) Error!void {
